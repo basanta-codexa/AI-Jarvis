@@ -39,6 +39,9 @@ class JarvisOrchestrator:
         # Wake word state
         self._listening = False
         self._wake_word_enabled = True
+        self._ai_provider_status = (
+            "configured" if settings.OPENAI_API_KEY else "offline"
+        )
 
         print(f"[Jarvis] Orchestrator initialized with {len(self.plugins.skills)} skills")
 
@@ -80,6 +83,7 @@ class JarvisOrchestrator:
     async def _ai_fallback(self, text: str) -> str:
         """AI-powered response for open-ended questions."""
         if not settings.OPENAI_API_KEY:
+            self._ai_provider_status = "offline"
             self.on_message(
                 "system",
                 "AI provider is not configured; using offline responses.",
@@ -134,10 +138,13 @@ class JarvisOrchestrator:
                 if response.choices else None
             )
             if content and content.strip():
+                self._ai_provider_status = "online"
                 return content.strip()
 
+            self._ai_provider_status = "fallback"
             self.on_message("error", "AI provider returned an empty response.")
         except APIError as exc:
+            self._ai_provider_status = "fallback"
             self.on_message(
                 "error",
                 f"AI provider request failed ({type(exc).__name__}); using offline responses.",
@@ -215,7 +222,11 @@ class JarvisOrchestrator:
         return {
             "skills": list(self.plugins.skills.keys()),
             "memory": self.memory.get_stats(),
-            "tts": "online",
+            "ai": getattr(
+                self, "_ai_provider_status",
+                "configured" if settings.OPENAI_API_KEY else "offline",
+            ),
+            "tts": "online" if self.tts.is_available else "offline",
             "stt": "online" if self.stt.is_available else "offline",
             "wake_word": self._wake_word_enabled,
         }

@@ -180,3 +180,26 @@ def test_ai_fallback_reports_unconfigured_provider(monkeypatch):
         "AI provider is not configured; using offline responses.",
     )
     orchestrator._offline_response.assert_called_once_with("Explain Python")
+
+
+def test_get_status_reports_actual_subsystem_availability():
+    orchestrator = make_orchestrator()
+    orchestrator._ai_provider_status = "fallback"
+    orchestrator._wake_word_enabled = True
+    orchestrator.plugins.skills = {"system": object()}
+    orchestrator.memory.get_stats = Mock(
+        return_value={"total_messages": 5, "vector_memory": "offline"}
+    )
+    orchestrator.tts.is_available = False
+    orchestrator.stt = SimpleNamespace(is_available=True)
+
+    status = orchestrator.get_status()
+
+    assert status == {
+        "skills": ["system"],
+        "memory": {"total_messages": 5, "vector_memory": "offline"},
+        "ai": "fallback",
+        "tts": "offline",
+        "stt": "online",
+        "wake_word": True,
+    }

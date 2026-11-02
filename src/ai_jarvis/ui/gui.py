@@ -93,8 +93,10 @@ class JarvisGUI:
         self._orbit_rings = []
         self._core_glow = []
         self._core_center = None
+        self._status_values = {}
 
         self._build_ui()
+        self._refresh_system_status()
         self._start_animations()
 
         # Greeting
@@ -151,10 +153,10 @@ class JarvisGUI:
         # System Status Panel
         self._add_panel(
             sidebar, "SYSTEM STATUS", COLOR_ACCENT, [
-                ("AI Core", "ONLINE", COLOR_SUCCESS),
-                ("Voice Engine", "ONLINE", COLOR_SUCCESS),
-                ("Memory Vector", "ONLINE", COLOR_SUCCESS),
-                ("Wake Word", "STANDBY", COLOR_WARNING),
+                ("AI Provider", "CHECKING", COLOR_WARNING),
+                ("Speech Output", "CHECKING", COLOR_WARNING),
+                ("Microphone", "CHECKING", COLOR_WARNING),
+                ("Vector Memory", "CHECKING", COLOR_WARNING),
             ],
         )
 
@@ -207,10 +209,13 @@ class JarvisGUI:
                 row, text=label, font=FONT_MONO_SMALL,
                 text_color=COLOR_TEXT_SECONDARY,
             ).pack(side="left")
-            ctk.CTkLabel(
+            value_label = ctk.CTkLabel(
                 row, text=value, font=FONT_MONO_SMALL,
                 text_color=color,
-            ).pack(side="right")
+            )
+            value_label.pack(side="right")
+            if title == "SYSTEM STATUS":
+                self._status_values[label] = value_label
 
         # Store reference for updates
         setattr(self, f"panel_{title.lower().replace(' ', '_')}", panel)
@@ -263,7 +268,7 @@ class JarvisGUI:
         ).pack(anchor="w", padx=20, pady=(25, 5))
 
         self.ai_status = ctk.CTkLabel(
-            right, text="STANDBY", font=FONT_SUBHEADER,
+            right, text="CHECKING", font=FONT_SUBHEADER,
             text_color=COLOR_TEXT_DIM,
         )
         self.ai_status.pack(anchor="w", padx=20)
@@ -596,6 +601,49 @@ class JarvisGUI:
         """Thread-safe callback from orchestrator."""
         self.root.after(0, self._add_bubble, role, text, role == "jarvis")
         self.root.after(0, self._update_status, role, text)
+        self.root.after(0, self._refresh_system_status)
+
+    def _refresh_system_status(self):
+        status = self.orch.get_status()
+        memory = status["memory"]
+        rows = {
+            "AI Provider": (status["ai"], {
+                "online": COLOR_SUCCESS,
+                "configured": COLOR_WARNING,
+                "offline": COLOR_WARNING,
+                "fallback": COLOR_ERROR,
+            }),
+            "Speech Output": (status["tts"], {
+                "online": COLOR_SUCCESS,
+                "offline": COLOR_ERROR,
+            }),
+            "Microphone": (status["stt"], {
+                "online": COLOR_SUCCESS,
+                "offline": COLOR_WARNING,
+            }),
+            "Vector Memory": (memory["vector_memory"], {
+                "online": COLOR_SUCCESS,
+                "offline": COLOR_WARNING,
+            }),
+        }
+        for label, (value, colors) in rows.items():
+            widget = self._status_values.get(label)
+            if widget:
+                widget.configure(
+                    text=value.upper(),
+                    text_color=colors.get(value, COLOR_TEXT_DIM),
+                )
+
+        ai_state = status["ai"].upper()
+        self.ai_status.configure(
+            text=ai_state,
+            text_color={
+                "ONLINE": COLOR_SUCCESS,
+                "CONFIGURED": COLOR_WARNING,
+                "OFFLINE": COLOR_WARNING,
+                "FALLBACK": COLOR_ERROR,
+            }.get(ai_state, COLOR_TEXT_DIM),
+        )
 
     def _update_status(self, role: str, text: str):
         if role == "error":

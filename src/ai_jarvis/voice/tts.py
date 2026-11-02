@@ -40,6 +40,10 @@ class TTS:
         except Exception:
             return False
 
+    @property
+    def is_available(self) -> bool:
+        return self._use_powershell
+
     def speak(self, text: str) -> None:
         """Queue text to be spoken. Non-blocking — returns immediately."""
         if not text or not text.strip():
