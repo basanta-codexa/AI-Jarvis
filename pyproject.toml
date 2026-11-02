@@ -1,0 +1,36 @@
+[project]
+name = "ai-jarvis"
+version = "2.0.0"
+description = "J.A.R.V.I.S. - Personal AI Assistant Platform with cinematic Iron Man-inspired interface"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Your Name" }]
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "pyttsx3>=2.99",
+    "SpeechRecognition>=3.17.0",
+    "openai>=1.65.0",
+    "customtkinter>=6.0.0",
+    "Pillow>=10.0.0",
+    "psutil>=7.0.0",
+    "requests>=2.32.0",
+    "beautifulsoup4>=4.15.0",
+    "chromadb>=0.5.0",
+    "sentence-transformers>=2.5.0",
+    "watchdog>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "black>=24.0.0",
+    "mypy>=1.10.0",
+    "ruff>=0.4.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_jarvis"]

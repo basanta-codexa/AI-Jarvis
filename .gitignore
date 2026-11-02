@@ -1,0 +1,59 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime data and local databases
+/data/*
+!/data/.gitkeep
+*.sqlite
+*.sqlite3
+*.db
+
+# Build and packaging output
+/build/
+/dist/
+*.egg-info/
+
+# Local editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Local screenshots used as visual references
+/Screenshot *.png
+/Screenshot *.jpg
+/Screenshot *.jpeg
+/Screenshot *.webp
+
+# Root-level local test/probe scripts; keep the tests/ package trackable
+/test_*.py
+/voice_test.py
