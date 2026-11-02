@@ -7,11 +7,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from openai import APIError, AsyncOpenAI
+
 from ai_jarvis.core.plugin_manager import PluginManager
 from ai_jarvis.core.memory import MemorySystem
 from ai_jarvis.voice.tts import TTS
 from ai_jarvis.voice.stt import STT
-from ai_jarvis.config.settings import MEMORY_DIR
+from ai_jarvis.config import settings
 
 
 class JarvisOrchestrator:
@@ -19,7 +21,7 @@ class JarvisOrchestrator:
 
     def __init__(self, on_message=None, data_dir: str | Path = None):
         if data_dir is None:
-            data_dir = MEMORY_DIR
+            data_dir = settings.MEMORY_DIR
         self.data_dir = Path(data_dir)
 
         # Callback for UI updates
@@ -77,42 +79,70 @@ class JarvisOrchestrator:
 
     async def _ai_fallback(self, text: str) -> str:
         """AI-powered response for open-ended questions."""
-        # Try OpenAI first
-        try:
-            from openai import OpenAI
-            from ai_jarvis.config.settings import (
-                OPENAI_API_KEY, OPENAI_BASE_URL, AI_MODEL,
-                AI_TEMPERATURE, AI_MAX_TOKENS, USER_NAME, JARVIS_NAME,
+        if not settings.OPENAI_API_KEY:
+            self.on_message(
+                "system",
+                "AI provider is not configured; using offline responses.",
             )
-            if OPENAI_API_KEY:
-                client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+            return self._offline_response(text)
+
+        try:
+            client = AsyncOpenAI(
+                api_key=settings.OPENAI_API_KEY,
+                base_url=settings.OPENAI_BASE_URL,
+                timeout=settings.AI_REQUEST_TIMEOUT,
+                max_retries=settings.AI_MAX_RETRIES,
+            )
+            try:
                 history = self.memory.get_recent(10)
+                if (
+                    history
+                    and history[-1].get("role") == "user"
+                    and history[-1].get("content") == text
+                ):
+                    history = history[:-1]
+
                 messages = [
                     {
                         "role": "system",
                         "content": (
-                            f"You are {JARVIS_NAME}, a helpful, witty, intelligent personal AI "
-                            f"assistant inspired by Iron Man's J.A.R.V.I.S. You are talking with {USER_NAME}. "
+                            f"You are {settings.JARVIS_NAME}, a helpful, witty, intelligent personal AI "
+                            f"assistant inspired by Iron Man's J.A.R.V.I.S. You are talking with {settings.USER_NAME}. "
                             "Keep responses concise, helpful, and slightly formal."
                         ),
                     }
                 ]
                 for msg in history:
-                    role = "assistant" if msg.get("role") == "jarvis" else msg.get("role", "user")
+                    role = (
+                        "assistant" if msg.get("role") == "jarvis"
+                        else msg.get("role", "user")
+                    )
                     messages.append({"role": role, "content": msg["content"]})
                 messages.append({"role": "user", "content": text})
 
-                response = client.chat.completions.create(
-                    model=AI_MODEL,
+                response = await client.chat.completions.create(
+                    model=settings.AI_MODEL,
                     messages=messages,
-                    max_tokens=AI_MAX_TOKENS,
-                    temperature=AI_TEMPERATURE,
+                    max_tokens=settings.AI_MAX_TOKENS,
+                    temperature=settings.AI_TEMPERATURE,
                 )
-                return response.choices[0].message.content.strip()
-        except Exception:
-            pass
+            finally:
+                await client.close()
 
-        # Offline fallback
+            content = (
+                response.choices[0].message.content
+                if response.choices else None
+            )
+            if content and content.strip():
+                return content.strip()
+
+            self.on_message("error", "AI provider returned an empty response.")
+        except APIError as exc:
+            self.on_message(
+                "error",
+                f"AI provider request failed ({type(exc).__name__}); using offline responses.",
+            )
+
         return self._offline_response(text)
 
     def _offline_response(self, text: str) -> str:
@@ -169,12 +199,7 @@ class JarvisOrchestrator:
 
     def process_sync(self, text: str) -> str:
         """Synchronous wrapper for process (for GUI callbacks)."""
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self.process(text))
+        return asyncio.run(self.process(text))
 
     def start_wake_word(self):
         """Enable always-on wake word listening."""

@@ -67,6 +67,8 @@ Settings are loaded from `.env` in the project root. Common options:
 | `AI_MODEL` | Model identifier accepted by the provider | `gpt-3.5-turbo` |
 | `AI_TEMPERATURE` | Response creativity setting | `0.7` |
 | `AI_MAX_TOKENS` | Maximum generated response tokens | `600` |
+| `AI_REQUEST_TIMEOUT` | AI request timeout, in seconds | `30` |
+| `AI_MAX_RETRIES` | Retries for transient provider errors | `1` |
 
 Provider credentials are private: keep them in `.env`, never commit them, and rotate any key that has been exposed. Without an API key, J.A.R.V.I.S. can still handle built-in commands and use its offline fallback.
 
@@ -113,4 +115,3 @@ Run the automated tests with:
 ```powershell
 python -m pytest
 ```
-

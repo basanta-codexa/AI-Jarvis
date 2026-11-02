@@ -531,11 +531,27 @@ class JarvisGUI:
 
     def _add_bubble(self, role: str, text: str, animate: bool = False):
         """Add a chat bubble with holographic styling."""
-        color = COLOR_ACCENT if role == "jarvis" else COLOR_ACCENT_PURPLE
-        label = JARVIS_NAME if role == "jarvis" else "You"
+        colors = {
+            "user": COLOR_ACCENT_PURPLE,
+            "jarvis": COLOR_ACCENT,
+            "system": COLOR_WARNING,
+            "error": COLOR_ERROR,
+        }
+        labels = {
+            "user": "You",
+            "jarvis": JARVIS_NAME,
+            "system": "System",
+            "error": "Error",
+        }
+        color = colors.get(role, COLOR_TEXT_DIM)
+        label = labels.get(role, role.title())
         anchor = "e" if role == "user" else "w"
         justify = "right" if role == "user" else "left"
-        fg = COLOR_BG_SURFACE if role == "jarvis" else COLOR_BG_GLASS
+        fg = (
+            COLOR_BG_SURFACE
+            if role in ("jarvis", "system", "error")
+            else COLOR_BG_GLASS
+        )
 
         frame = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
         frame.pack(fill="x", padx=10, pady=6)
@@ -579,10 +595,18 @@ class JarvisGUI:
     def _on_message(self, role: str, text: str):
         """Thread-safe callback from orchestrator."""
         self.root.after(0, self._add_bubble, role, text, role == "jarvis")
-        self.root.after(0, self._update_status, text)
+        self.root.after(0, self._update_status, role, text)
 
-    def _update_status(self, text: str):
-        self.status_var.set(f"Processing: {text[:60]}...")
+    def _update_status(self, role: str, text: str):
+        if role == "error":
+            status = f"Attention: {text}"
+        elif role == "system":
+            status = text
+        elif role == "user":
+            status = "Processing your request…"
+        else:
+            status = "Response ready."
+        self.status_var.set(status[:100])
 
     def _greet(self):
         greeting = f"Hello {USER_NAME}. {JARVIS_NAME} is online. All systems operational."
