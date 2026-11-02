@@ -35,6 +35,12 @@ python -m pip install -e .
 Copy-Item .env.example .env
 ```
 
+Alternatively, install the same runtime dependencies with:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
 Edit `.env` to set your name and, if desired, an AI provider and API key. Then launch the application:
 
 ```powershell
@@ -85,12 +91,12 @@ src/ai_jarvis/
   skills/                  AI, system, web, and memory skills
   ui/                      CustomTkinter interface
   voice/                   Speech recognition and text-to-speech
-tests/                     Test package (no test cases included yet)
-requirements.txt           Pinned subset of dependencies
+tests/                     Automated core behavior tests
+requirements.txt           Installs runtime dependencies from pyproject.toml
 pyproject.toml             Package metadata and development dependencies
 ```
 
-Use `pyproject.toml` for installation: it declares the complete application dependencies. `requirements.txt` is a pinned subset and does not include every optional or vector-memory dependency.
+`pyproject.toml` is the single source of truth for runtime dependencies. `requirements.txt` delegates to it so the two installation methods stay consistent.
 
 Runtime data, including conversation history and the local vector database, is stored under `data/` and is intentionally excluded from version control.
 
@@ -102,11 +108,9 @@ Install the optional development tools with:
 python -m pip install -e ".[dev]"
 ```
 
-Add automated tests under `tests/` and run them with:
+Run the automated tests with:
 
 ```powershell
 python -m pytest
 ```
-
-The repository currently contains no runnable test cases.
 
