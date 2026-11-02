@@ -4,6 +4,8 @@ J.A.R.V.I.S. is a Python desktop assistant with a dark, animated HUD, text and o
 
 The application entry point is `main.py`. The actively used implementation is in `src/ai_jarvis/`.
 
+[![Tests](https://github.com/basanta-codexa/AI-Jarvis/actions/workflows/tests.yml/badge.svg)](https://github.com/basanta-codexa/AI-Jarvis/actions/workflows/tests.yml)
+
 ## Features
 
 - CustomTkinter desktop interface with an animated reactor, conversation view, quick commands, and activity panel.
@@ -115,3 +117,5 @@ Run the automated tests with:
 ```powershell
 python -m pytest
 ```
+
+GitHub Actions runs the test suite on Windows and Ubuntu with Python 3.10 and 3.14 for pushes and pull requests.
