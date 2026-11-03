@@ -12,7 +12,7 @@ The application entry point is `main.py`. The actively used implementation is in
 - Optional AI responses through OpenAI-compatible providers, including OpenAI, OpenRouter, Grok, and Groq.
 - Offline fallback responses when no API key is configured or a hosted AI request fails.
 - Built-in skills for system information, approved app and website shortcuts, browser-based web search, and memory.
-- Conversation history stored locally as JSON. Semantic memory uses ChromaDB and sentence-transformers when available — install them with `python -m pip install -e ".[vector]"`; without it, memory falls back to basic in-memory notes.
+- Conversation history stored locally as JSON (atomic writes; corrupt files are backed up, never silently erased). Semantic memory uses ChromaDB and sentence-transformers when available — install them with `python -m pip install -e ".[vector]"`; without it, memory falls back to basic in-memory notes. `forget everything` genuinely wipes both.
 - Windows text-to-speech through PowerShell System.Speech.
 - Hands-free voice loop: after JARVIS finishes speaking it automatically re-listens, with a live voice-level meter and a "hearing you" indication.
 - Optional microphone input through sounddevice (capture) and SpeechRecognition (Google Web Speech).

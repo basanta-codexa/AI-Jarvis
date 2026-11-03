@@ -55,5 +55,15 @@ class MemorySkill(BaseSkill):
         return SkillResult(success=True, response=response)
 
     def _handle_forget(self, text: str) -> SkillResult:
-        self.orchestrator.memory.forget_all()
+        error = self.orchestrator.memory.forget_all()
+        if error:
+            return SkillResult(
+                success=False,
+                speak=False,
+                response=(
+                    f"Conversation history cleared, but {error}. "
+                    "The semantic memories may still be stored — "
+                    "delete the data/chroma_db folder manually."
+                ),
+            )
         return SkillResult(success=True, response="All memory cleared. Starting fresh.")

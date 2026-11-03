@@ -88,8 +88,6 @@ WAKE_WORD = "hey jarvis"
 #  MEMORY
 # ═════════════════════════════════════════════════════════════════════
 MEMORY_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
-MEMORY_FILE = MEMORY_DIR / "conversation.json"
-CHROMA_DIR = MEMORY_DIR / "chroma_db"
 VECTOR_MEMORY_ENABLED = True
 
 # ═════════════════════════════════════════════════════════════════════
