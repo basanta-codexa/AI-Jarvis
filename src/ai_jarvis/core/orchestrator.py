@@ -39,6 +39,7 @@ class JarvisOrchestrator:
         # Wake word state
         self._listening = False
         self._wake_word_enabled = True
+        self.request_shutdown = False     # set by the exit skill; host apps poll it
         self._ai_provider_status = (
             "configured" if settings.OPENAI_API_KEY else "offline"
         )

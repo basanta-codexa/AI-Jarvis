@@ -69,11 +69,15 @@ def launch_cli():
             if not cmd:
                 continue
             orch.process_sync(cmd)
-            if cmd.lower() in ("exit", "quit", "shutdown", "bye", "goodbye"):
+            if getattr(orch, "request_shutdown", False) or cmd.lower() in (
+                "exit", "quit", "shutdown", "bye", "goodbye",
+            ):
                 break
         except (KeyboardInterrupt, EOFError):
             orch.tts.speak("Goodbye!")
             break
+
+    orch.shutdown()
 
 
 if __name__ == "__main__":

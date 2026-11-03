@@ -128,5 +128,6 @@ try {{
         TTS_VOLUME = max(0.0, min(1.0, volume))
 
     def shutdown(self):
-        """Signal the worker thread to stop."""
+        """Signal the worker thread to stop, waiting for pending speech to finish."""
         self._queue.put(None)
+        self._worker.join(timeout=8)

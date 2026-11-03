@@ -192,6 +192,8 @@ class SystemSkill(BaseSkill):
         )
 
     def _handle_exit(self, text: str) -> SkillResult:
+        # Signal the host app (GUI closes the window, CLI quits) for real
+        self.orchestrator.request_shutdown = True
         return SkillResult(
             success=True,
             response=f"Shutting down. Goodbye, {USER_NAME}.",

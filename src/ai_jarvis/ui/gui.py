@@ -258,6 +258,10 @@ class JarvisGUI:
                       outline="", tags="orb")
 
     def _animate(self):
+        # Exit skill requested a real shutdown — stop drawing, say goodbye, close
+        if getattr(self.orch, "request_shutdown", False):
+            self._begin_graceful_close()
+            return
         self._pulse += 0.11
         self.sphere.angle += 0.018
         t = self._pulse
@@ -307,6 +311,8 @@ class JarvisGUI:
 
     def _on_message(self, role: str, text: str):
         """Orchestrator callback (called from a worker thread)."""
+        if getattr(self, "_closing", False):
+            return
         self.root.after(0, self._add_bubble, role, text)
 
     def _add_bubble(self, role: str, text: str):
@@ -432,7 +438,30 @@ class JarvisGUI:
     #  Lifecycle
     # ─────────────────────────────────────────────────────────────
 
+    def _begin_graceful_close(self):
+        """Wait for the goodbye to be spoken, then close the window."""
+        if getattr(self, "_closing", False):
+            return
+        self._closing = True
+        self.caption_var.set("Shutting down…")
+        try:
+            self.entry.configure(state="disabled")
+        except Exception:
+            pass
+        if getattr(self.orch.tts, "is_available", False) and hasattr(self.orch.tts, "on_idle"):
+            # on_idle fires when the speech queue drains — perfect "goodbye done" signal
+            self.orch.tts.on_idle = lambda: self.root.after(0, self._on_close)
+            self.root.after(15_000, self._close_if_closing)   # safety net
+        else:
+            self._on_close()
+
+    def _close_if_closing(self):
+        if getattr(self, "_closing", False):
+            self._on_close()
+
     def _greet(self):
+        if getattr(self, "_closing", False):
+            return
         greeting = f"Hello {USER_NAME}. {JARVIS_NAME} is online."
         self._add_bubble("jarvis", greeting)
         self.orch.tts.speak(greeting)
