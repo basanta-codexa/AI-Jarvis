@@ -15,16 +15,15 @@ from __future__ import annotations
 
 import time
 
+import numpy as np               # hard dependency — always available
 import speech_recognition as sr
 
 from ai_jarvis.config.settings import STT_TIMEOUT, STT_PHRASE_LIMIT
 
 try:
-    import numpy as np
     import sounddevice as sd
     _CAPTURE_AVAILABLE = True
-except Exception:                      # sounddevice/numpy missing (e.g. minimal CI)
-    np = None
+except Exception:                # sounddevice/PortAudio missing (e.g. CI without libportaudio2)
     sd = None
     _CAPTURE_AVAILABLE = False
 
@@ -58,7 +57,7 @@ class STT:
     @staticmethod
     def _check_mic() -> tuple[bool, str]:
         if not _CAPTURE_AVAILABLE:
-            return False, "sounddevice/numpy not installed"
+            return False, "sounddevice/PortAudio not installed"
         try:
             devices = sd.query_devices()
             has_input = any(d.get("max_input_channels", 0) > 0 for d in devices)
