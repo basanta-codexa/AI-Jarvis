@@ -1,10 +1,10 @@
 [project]
 name = "ai-jarvis"
 version = "2.0.0"
-description = "J.A.R.V.I.S. - Personal AI Assistant Platform with cinematic Iron Man-inspired interface"
+description = "Voice-first personal AI assistant for the desktop — OpenAI-compatible providers, built-in skills, local memory"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "Your Name" }]
+authors = [{ name = "Basanta Kumar Mohanty" }]
 dependencies = [
     "python-dotenv>=1.0.0",
     "SpeechRecognition>=3.17.0",
