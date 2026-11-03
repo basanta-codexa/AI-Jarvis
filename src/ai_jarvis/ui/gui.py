@@ -1,59 +1,93 @@
 """
-J.A.R.V.I.S. Cinematic GUI
-Iron Man-inspired interface with holographic HUD, arc reactor, audio visualizer,
-scanning lines, particle effects, and glassmorphism panels.
+J.A.R.V.I.S. — simple voice-first interface.
+
+One screen, nothing else:
+  top bar    — real status (AI online/offline, mic availability)
+  centre     — clickable arc reactor (click to talk) with a state caption
+  below      — slim chat area (only visible once there are messages)
+  chips row  — quick commands
+  bottom     — one input row with a big mic button
+
+Plain customtkinter + tkinter.Canvas. No external UI dependencies.
 """
 from __future__ import annotations
 
 import math
 import random
 import threading
-import time
 import tkinter as tk
 
 import customtkinter as ctk
 
 from ai_jarvis.config.settings import (
-    COLOR_BG_DEEP, COLOR_BG, COLOR_BG_SURFACE, COLOR_BG_GLASS,
-    COLOR_ACCENT, COLOR_ACCENT_GLOW, COLOR_ACCENT_DIM, COLOR_ACCENT_PURPLE,
-    COLOR_ACCENT_RED, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TEXT_DIM,
-    COLOR_TEXT_ACCENT, COLOR_SUCCESS, COLOR_WARNING, COLOR_ERROR, COLOR_LISTENING,
-    WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, FONT_HEADER, FONT_SUBHEADER,
-    FONT_MONO, FONT_MONO_SMALL, FONT_UI, USER_NAME, JARVIS_NAME,
+    COLOR_BG_DEEP, COLOR_BG_SURFACE, COLOR_BG_GLASS, COLOR_ACCENT,
+    COLOR_ACCENT_DIM, COLOR_ACCENT_RED, COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY, COLOR_TEXT_DIM, COLOR_SUCCESS, COLOR_WARNING,
+    WINDOW_TITLE, FONT_UI, FONT_MONO_SMALL, USER_NAME, JARVIS_NAME,
 )
 
+# Window geometry (kept local on purpose — this is a personal app, not a theme)
+WINDOW_W, WINDOW_H = 1000, 720
+ORB_SIZE = 250          # reactor canvas edge, px
+PULSE_MS = 33           # ~30 fps pulse animation
 
-class Particle:
-    """A floating dust particle for the holographic effect."""
 
-    def __init__(self, canvas, w, h):
-        self.canvas = canvas
-        self.w = w
-        self.h = h
-        self.x = random.uniform(0, w)
-        self.y = random.uniform(0, h)
-        self.size = random.uniform(0.5, 2.5)
-        self.speed = random.uniform(0.2, 0.8)
-        self.angle = random.uniform(0, 2 * math.pi)
-        self.alpha = random.uniform(0.1, 0.6)
-        self.id = canvas.create_oval(
-            self.x, self.y, self.x + self.size, self.y + self.size,
-            fill=COLOR_ACCENT, outline=""
-        )
+def status_line(status: dict) -> str:
+    """One honest status line from orchestrator.get_status(). No invented numbers."""
+    ai = status.get("ai", "offline")
+    base = {"online": "Online", "configured": "Online"}.get(ai, "Offline mode")
+    mic = "mic ready" if status.get("stt") == "online" else "no mic"
+    memory = "memory on" if status.get("memory", {}).get("vector_memory") == "online" else "memory basic"
+    return f"{base} · {mic} · {memory}"
 
-    def update(self):
-        self.x += math.cos(self.angle) * self.speed
-        self.y += math.sin(self.angle) * self.speed
-        if self.x < 0 or self.x > self.w or self.y < 0 or self.y > self.h:
-            self.x = random.uniform(0, self.w)
-            self.y = random.uniform(0, self.h)
-        self.canvas.coords(
-            self.id, self.x, self.y, self.x + self.size, self.y + self.size
-        )
+
+def _lerp(a: str, b: str, t: float) -> str:
+    """Blend two '#rrggbb' colours (t=0 → a, t=1 → b)."""
+    ca, cb = (int(a[i:i + 2], 16) for i in (1, 3, 5)), (int(b[i:i + 2], 16) for i in (1, 3, 5))
+    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(ca, cb))
+
+
+class ParticleSphere:
+    """A rotating sphere of glowing dots (the arc-reactor look).
+
+    Math in one line: points live on a unit sphere; each frame we rotate
+    around the Y axis, tilt on X, then scale by depth so near dots are
+    bigger and brighter. Far dots are drawn first (painter's algorithm).
+    """
+
+    # Dot colour ramps: [nearest, farthest] for idle and listening modes
+    RAMP_IDLE = ("#d9fbff", "#032731")
+    RAMP_LISTEN = ("#ffe3e3", "#330607")
+
+    def __init__(self, count: int = 150):
+        self.points = []
+        self.size = []
+        self.phase = []
+        for _ in range(count):
+            z = random.uniform(-1.0, 1.0)                    # uniform on sphere via z
+            theta = random.uniform(0.0, 2 * math.pi)
+            r = math.sqrt(max(0.0, 1.0 - z * z))
+            self.points.append((r * math.cos(theta), r * math.sin(theta), z))
+            self.size.append(random.uniform(0.7, 1.7))
+            self.phase.append(random.uniform(0.0, 2 * math.pi))
+        self.angle = 0.0
+
+    def project(self, tilt_x: float = 0.42):
+        cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
+        cos_t, sin_t = math.cos(tilt_x), math.sin(tilt_x)
+        out = []
+        for i, (x, y, z) in enumerate(self.points):
+            x1 = x * cos_a + z * sin_a                        # rotate around Y
+            z1 = -x * sin_a + z * cos_a
+            y2 = y * cos_t - z1 * sin_t                       # fixed tilt on X
+            z2 = y * sin_t + z1 * cos_t
+            out.append((x1, y2, z2, i))
+        out.sort(key=lambda p: p[2], reverse=True)            # farthest first
+        return out
 
 
 class JarvisGUI:
-    """Cinematic J.A.R.V.I.S. interface."""
+    """Single-screen, voice-first interface."""
 
     def __init__(self, orchestrator):
         self.orch = orchestrator
@@ -64,659 +98,351 @@ class JarvisGUI:
 
         self.root = ctk.CTk()
         self.root.title(WINDOW_TITLE)
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-        width = min(WINDOW_WIDTH, screen_width - 80)
-        height = min(WINDOW_HEIGHT, screen_height - 100)
-        x = max(0, (screen_width - width) // 2)
-        y = max(0, (screen_height - height) // 2)
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
         self.root.configure(fg_color=COLOR_BG_DEEP)
-        self.root.minsize(min(900, width), min(600, height))
-        self.root.resizable(True, True)
-
-        # Window close handler
+        self._center(WINDOW_W, WINDOW_H)
+        self.root.minsize(760, 560)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        # Animation state
-        self._pulse_angle = 0
-        self._scan_line_y = 0
-        self._scan_direction = 1
-        self._audio_level = 0
-        self._is_listening = False
-        self._typing_active = False
-        self._typing_text = ""
-        self._typing_index = 0
-        self._typing_bubble = None
-        self._particles = []
-        self._frame_count = 0
-        self._orbit_rings = []
-        self._core_glow = []
-        self._core_center = None
-        self._status_values = {}
+        self._listening = False
+        self._pulse = 0.0
+        self._placeholder = None
+        self.sphere = ParticleSphere()
 
-        self._build_ui()
-        self._refresh_system_status()
-        self._start_animations()
-
-        # Greeting
-        self.root.after(800, self._greet)
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  UI BUILDING
-    # ═══════════════════════════════════════════════════════════════════
-
-    def _build_ui(self):
-        # Main container with deep space bg
-        self.main = ctk.CTkFrame(self.root, fg_color=COLOR_BG_DEEP, corner_radius=0)
-        self.main.pack(fill="both", expand=True)
-        self.main.grid_columnconfigure(1, weight=1)
-        self.main.grid_rowconfigure(0, weight=1)
-
-        # ── Left Sidebar (System Status + Comms) ──
-        self._build_sidebar()
-
-        # ── Center Main Area (Holographic Display) ──
-        self._build_main_display()
-
-        # ── Right Panel (Memory + AI Core) ──
-        self._build_right_panel()
-
-        # ── Bottom Input Bar ──
+        self._build_top_bar()
+        self._build_orb()
+        self._build_chat()
+        self._build_quick_commands()
         self._build_input_bar()
 
-        # ── Status Bar ──
-        self._build_status_bar()
+        # Wire voice feedback: level meter + re-listen when JARVIS finishes speaking
+        if hasattr(self.orch.stt, "on_volume"):
+            self.orch.stt.on_volume = lambda v: self.root.after(0, self._set_level, v)
+        if hasattr(self.orch.tts, "on_idle"):
+            self.orch.tts.on_idle = lambda: self.root.after(0, self._auto_listen)
 
-    def _build_sidebar(self):
-        sidebar = ctk.CTkFrame(
-            self.main, fg_color=COLOR_BG_SURFACE, width=240, corner_radius=0
+        self._refresh_status()
+        self._animate()
+        self.root.after(800, self._greet)
+
+    # ─────────────────────────────────────────────────────────────
+    #  Layout
+    # ─────────────────────────────────────────────────────────────
+
+    def _center(self, w: int, h: int):
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        w, h = min(w, sw - 80), min(h, sh - 80)
+        self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+
+    def _build_top_bar(self):
+        bar = ctk.CTkFrame(self.root, fg_color="transparent", height=36)
+        bar.pack(fill="x", padx=18, pady=(12, 0))
+        bar.pack_propagate(False)
+
+        ctk.CTkLabel(
+            bar, text=JARVIS_NAME, font=FONT_MONO_SMALL, text_color=COLOR_ACCENT,
+        ).pack(side="left")
+
+        self.status_dot = ctk.CTkLabel(
+            bar, text="●", font=FONT_MONO_SMALL, text_color=COLOR_WARNING,
         )
-        sidebar.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
-        sidebar.grid_propagate(False)
-
-        # Header
-        header = ctk.CTkFrame(sidebar, fg_color="transparent", height=80)
-        header.pack(fill="x", padx=20, pady=(25, 15))
-        header.pack_propagate(False)
-
+        self.status_dot.pack(side="left", padx=(10, 4))
+        self.status_var = tk.StringVar(value="Starting…")
         ctk.CTkLabel(
-            header, text="J.A.R.V.I.S.",
-            font=FONT_HEADER, text_color=COLOR_ACCENT,
-        ).pack(anchor="w")
+            bar, textvariable=self.status_var, font=FONT_MONO_SMALL,
+            text_color=COLOR_TEXT_SECONDARY,
+        ).pack(side="left")
 
+    def _build_orb(self):
+        self.orb = tk.Canvas(
+            self.root, width=ORB_SIZE, height=ORB_SIZE,
+            bg=COLOR_BG_DEEP, highlightthickness=0,
+        )
+        self.orb.pack(pady=(10, 2))
+        self.orb.bind("<Button-1>", lambda _e: self._toggle_mic())
+        self.orb.configure(cursor="hand2")
+
+        self.caption_var = tk.StringVar(value="Ready. How can I help?")
         ctk.CTkLabel(
-            header, text="NEURAL INTERFACE v2.0",
+            self.root, textvariable=self.caption_var,
+            font=FONT_UI, text_color=COLOR_TEXT_SECONDARY,
+        ).pack()
+
+        # Voice-level meter — fills with your voice, empty when idle
+        self.level = tk.Canvas(
+            self.root, width=320, height=6, bg=COLOR_BG_DEEP, highlightthickness=0
+        )
+        self.level.pack(pady=(6, 0))
+        self._level_bar = self.level.create_rectangle(0, 0, 0, 6, fill=COLOR_ACCENT_RED, width=0)
+
+    def _set_level(self, level: float):
+        width = int(320 * max(0.0, min(1.0, level)))
+        self.level.coords(self._level_bar, 0, 0, width, 6)
+
+    def _build_chat(self):
+        self.chat = ctk.CTkScrollableFrame(
+            self.root, fg_color="transparent",
+        )
+        self.chat.pack(fill="both", expand=True, padx=90, pady=8)
+        self.chat.grid_columnconfigure(0, weight=1)
+
+        self._placeholder = ctk.CTkLabel(
+            self.chat, text="Your conversation will appear here.",
             font=FONT_MONO_SMALL, text_color=COLOR_TEXT_DIM,
-        ).pack(anchor="w")
-
-        # System Status Panel
-        self._add_panel(
-            sidebar, "SYSTEM STATUS", COLOR_ACCENT, [
-                ("AI Provider", "CHECKING", COLOR_WARNING),
-                ("Speech Output", "CHECKING", COLOR_WARNING),
-                ("Microphone", "CHECKING", COLOR_WARNING),
-                ("Vector Memory", "CHECKING", COLOR_WARNING),
-            ],
         )
+        self._placeholder.pack(pady=20)
 
-        # Comms Panel
-        self._add_panel(
-            sidebar, "COMMUNICATIONS", COLOR_ACCENT_PURPLE, [
-                ("Uplink", "SECURE", COLOR_SUCCESS),
-                ("Latency", "12ms", COLOR_SUCCESS),
-                ("Bandwidth", "MAX", COLOR_SUCCESS),
-            ],
-        )
+    def _build_quick_commands(self):
+        row = ctk.CTkFrame(self.root, fg_color="transparent")
+        row.pack(fill="x", padx=90, pady=(0, 4))
 
-        # Quick Commands
-        ctk.CTkLabel(
-            sidebar, text="QUICK COMMANDS",
-            font=FONT_MONO_SMALL, text_color=COLOR_TEXT_DIM,
-        ).pack(anchor="w", padx=20, pady=(25, 10))
-
-        quick_cmds = [
+        for label, cmd in [
             ("🕐 Time", "what time is it"),
             ("📅 Date", "what is today's date"),
-            ("💻 System Status", "system status"),
+            ("💻 Status", "system status"),
             ("🧠 Memory", "what do you remember"),
             ("😄 Joke", "tell me a joke"),
-            ("🌐 Open Google", "open google"),
-        ]
-        for label, cmd in quick_cmds:
-            btn = ctk.CTkButton(
-                sidebar, text=label, anchor="w",
-                fg_color="transparent", hover_color=COLOR_ACCENT_DIM,
-                border_color=COLOR_ACCENT, border_width=1,
-                height=32, font=FONT_UI,
-                command=lambda c=cmd: self._send_command(c),
-            )
-            btn.pack(fill="x", padx=20, pady=3)
-
-    def _add_panel(self, parent, title, accent_color, items):
-        panel = ctk.CTkFrame(parent, fg_color=COLOR_BG_GLASS, corner_radius=8)
-        panel.pack(fill="x", padx=20, pady=10)
-
-        ctk.CTkLabel(
-            panel, text=title, font=FONT_MONO_SMALL,
-            text_color=accent_color,
-        ).pack(anchor="w", padx=12, pady=(10, 5))
-
-        for label, value, color in items:
-            row = ctk.CTkFrame(panel, fg_color="transparent")
-            row.pack(fill="x", padx=12, pady=2)
-            ctk.CTkLabel(
-                row, text=label, font=FONT_MONO_SMALL,
-                text_color=COLOR_TEXT_SECONDARY,
-            ).pack(side="left")
-            value_label = ctk.CTkLabel(
-                row, text=value, font=FONT_MONO_SMALL,
-                text_color=color,
-            )
-            value_label.pack(side="right")
-            if title == "SYSTEM STATUS":
-                self._status_values[label] = value_label
-
-        # Store reference for updates
-        setattr(self, f"panel_{title.lower().replace(' ', '_')}", panel)
-
-    def _build_main_display(self):
-        center = ctk.CTkFrame(self.main, fg_color=COLOR_BG_DEEP, corner_radius=0)
-        center.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
-        center.grid_columnconfigure(0, weight=1)
-        center.grid_rowconfigure(0, weight=3)
-        center.grid_rowconfigure(1, weight=2)
-
-        # Canvas for holographic effects
-        self.canvas = tk.Canvas(
-            center, bg=COLOR_BG_DEEP, highlightthickness=0,
-            width=640, height=520,
-        )
-        self.canvas.grid(row=0, column=0, sticky="nsew", padx=20, pady=(16, 8))
-        self.canvas.bind("<Configure>", self._resize_display)
-
-        # Keep the conversation separate from the animated display so neither
-        # the reactor nor long replies get clipped by the other.
-        self.chat_frame = ctk.CTkScrollableFrame(
-            center, fg_color=COLOR_BG_DEEP,
-        )
-        self.chat_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        self.chat_frame.grid_columnconfigure(0, weight=1)
-
-        self._msg_bubbles = []
-
-    def _build_right_panel(self):
-        right = ctk.CTkFrame(
-            self.main, fg_color=COLOR_BG_SURFACE, width=280, corner_radius=0
-        )
-        right.grid(row=0, column=2, sticky="nsew", padx=0, pady=0)
-        right.grid_propagate(False)
-
-        # Memory Panel
-        self._add_panel(
-            right, "MEMORY CORE", COLOR_ACCENT, [
-                ("Vector DB", "ACTIVE", COLOR_SUCCESS),
-                ("Short-term", "ACTIVE", COLOR_SUCCESS),
-                ("Long-term", "ONLINE", COLOR_SUCCESS),
-            ],
-        )
-
-        # AI Core Status
-        ctk.CTkLabel(
-            right, text="AI CORE", font=FONT_MONO_SMALL,
-            text_color=COLOR_ACCENT_PURPLE,
-        ).pack(anchor="w", padx=20, pady=(25, 5))
-
-        self.ai_status = ctk.CTkLabel(
-            right, text="CHECKING", font=FONT_SUBHEADER,
-            text_color=COLOR_TEXT_DIM,
-        )
-        self.ai_status.pack(anchor="w", padx=20)
-
-        # Activity log
-        ctk.CTkLabel(
-            right, text="ACTIVITY LOG", font=FONT_MONO_SMALL,
-            text_color=COLOR_TEXT_DIM,
-        ).pack(anchor="w", padx=20, pady=(20, 5))
-
-        self.activity_log = ctk.CTkTextbox(
-            right, width=260, height=200, fg_color=COLOR_BG_DEEP,
-            text_color=COLOR_TEXT_PRIMARY, font=FONT_MONO_SMALL,
-            border_color=COLOR_ACCENT_DIM, border_width=1,
-        )
-        self.activity_log.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        ]:
+            ctk.CTkButton(
+                row, text=label, command=lambda c=cmd: self._send(c),
+                font=FONT_MONO_SMALL, height=28, corner_radius=14,
+                fg_color="transparent", border_color=COLOR_ACCENT_DIM,
+                border_width=1, text_color=COLOR_TEXT_SECONDARY,
+                hover_color=COLOR_BG_GLASS,
+            ).pack(side="left", padx=(0, 8))
 
     def _build_input_bar(self):
-        bar = ctk.CTkFrame(self.root, fg_color=COLOR_BG_SURFACE, height=90, corner_radius=0)
-        bar.pack(fill="x", side="bottom")
-        bar.grid_columnconfigure(1, weight=1, minsize=180)
-        bar.grid_rowconfigure(0, weight=1)
-        bar.grid_propagate(False)
+        bar = ctk.CTkFrame(self.root, fg_color="transparent")
+        bar.pack(fill="x", padx=90, pady=(0, 18))
 
-        # Voice activity ring (canvas)
-        self.voice_ring = tk.Canvas(
-            bar, width=58, height=58, bg=COLOR_BG_SURFACE, highlightthickness=0
+        self.entry = ctk.CTkEntry(
+            bar, placeholder_text="Ask JARVIS anything…",
+            font=FONT_UI, height=44, corner_radius=22,
+            fg_color=COLOR_BG_GLASS, border_color=COLOR_ACCENT_DIM,
         )
-        self.voice_ring.grid(row=0, column=0, padx=(14, 6), pady=10)
-        self._ring_id = self.voice_ring.create_oval(
-            7, 7, 51, 51, outline=COLOR_ACCENT_DIM, width=3
-        )
-        self._ring_fill = self.voice_ring.create_oval(
-            17, 17, 41, 41, fill=COLOR_ACCENT, outline=""
-        )
+        self.entry.pack(side="left", fill="x", expand=True)
+        self.entry.bind("<Return>", lambda _e: self._send_from_entry())
+        self.entry.focus_set()
 
-        # Text input
-        self.input_entry = ctk.CTkEntry(
-            bar,
-            placeholder_text=f"Ask {JARVIS_NAME} anything…",
-            font=FONT_UI, height=46, corner_radius=23,
-            fg_color=COLOR_BG_DEEP, border_color=COLOR_ACCENT,
-        )
-        self.input_entry.grid(row=0, column=1, sticky="ew", padx=6, pady=18)
-        self.input_entry.bind("<Return>", lambda e: self._send_input())
-
-        # Send button
         ctk.CTkButton(
-            bar, text="SEND  ›", width=86, height=44,
-            fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_GLOW,
+            bar, text="Send", width=70, height=44, corner_radius=22,
+            fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_DIM,
             text_color=COLOR_BG_DEEP, font=ctk.CTkFont(weight="bold"),
-            corner_radius=23, command=self._send_input,
-        ).grid(row=0, column=2, padx=(6, 8), pady=18)
+            command=self._send_from_entry,
+        ).pack(side="left", padx=(8, 0))
 
-        # Mic button
         self.mic_btn = ctk.CTkButton(
-            bar, text="🎤", width=48, height=44,
-            fg_color=COLOR_ACCENT_PURPLE, hover_color="#6d28d9",
-            corner_radius=25, command=self._toggle_mic,
+            bar, text="🎤", width=54, height=44, corner_radius=22,
+            fg_color=COLOR_ACCENT_DIM, hover_color=COLOR_BG_GLASS,
+            command=self._toggle_mic,
         )
-        self.mic_btn.grid(row=0, column=3, padx=(4, 14), pady=18)
+        self.mic_btn.pack(side="left", padx=(8, 0))
 
-    def _build_status_bar(self):
-        sb = ctk.CTkFrame(self.root, fg_color=COLOR_BG_DEEP, height=24, corner_radius=0)
-        sb.pack(fill="x", side="bottom")
+    # ─────────────────────────────────────────────────────────────
+    #  Arc reactor — rotating particle sphere over a glow core
+    # ─────────────────────────────────────────────────────────────
 
-        self.status_var = tk.StringVar(value="Systems online. Awaiting command.")
-        ctk.CTkLabel(
-            sb, textvariable=self.status_var,
-            font=FONT_MONO_SMALL, text_color=COLOR_TEXT_DIM,
-        ).pack(side="left", padx=20, pady=2)
+    CORE_IDLE = ["#030c12", "#04222c", "#06333f", "#084a5e", "#0d5f7a", "#12809e"]
+    CORE_LISTEN = ["#0e0304", "#2a0708", "#3f0c0d", "#571213", "#731b1c", "#912424"]
+    HOT_IDLE, HOT_LISTEN = "#00f0ff", "#ff5a5a"
 
-        # Time
-        self.time_var = tk.StringVar(value="00:00:00")
-        ctk.CTkLabel(
-            sb, textvariable=self.time_var,
-            font=FONT_MONO, text_color=COLOR_ACCENT,
-        ).pack(side="right", padx=20, pady=2)
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  ANIMATIONS
-    # ═══════════════════════════════════════════════════════════════════
-
-    def _start_animations(self):
-        # Create particles
-        for _ in range(30):
-            self._particles.append(
-                Particle(self.canvas, self.canvas.winfo_width(), self.canvas.winfo_height())
-            )
-        self._resize_display()
-        self._animate()
-
-    def _resize_display(self, _event=None):
-        width = max(self.canvas.winfo_width(), 1)
-        height = max(self.canvas.winfo_height(), 1)
-        for particle in self._particles:
-            particle.w = width
-            particle.h = height
-            if particle.x > width or particle.y > height:
-                particle.x = random.uniform(0, width)
-                particle.y = random.uniform(0, height)
-
-        self.canvas.delete("reactor")
-        self._orbit_rings.clear()
-        self._core_glow.clear()
-        center_x = width / 2
-        center_y = height * 0.5
-        radius = min(width * 0.2, height * 0.27, 170)
-        if radius < 20:
-            return
-
-        for scale, tilt, depth, phase, speed in (
-            (1.0, 0.34, 0.28, 0.0, 0.45),
-            (0.82, 0.58, 0.16, 1.7, -0.32),
-            (0.65, 0.25, 0.34, 3.2, 0.62),
-        ):
-            segments = []
-            segment_count = 40
-            for index in range(segment_count):
-                shade = COLOR_ACCENT if index % 5 == 0 else COLOR_ACCENT_DIM
-                segments.append(self.canvas.create_line(
-                    0, 0, 0, 0, fill=shade,
-                    width=2 if index % 5 == 0 else 1,
-                    tags="reactor",
-                ))
-            node = self.canvas.create_oval(
-                0, 0, 0, 0, fill=COLOR_ACCENT_GLOW,
-                outline=COLOR_ACCENT, width=1, tags="reactor",
-            )
-            self._orbit_rings.append({
-                "segments": segments, "node": node, "radius": radius * scale,
-                "tilt": tilt, "depth": depth, "phase": phase, "speed": speed,
-                "count": segment_count,
-            })
-
-        for scale, fill in (
-            (0.34, "#06202a"),
-            (0.27, "#07313d"),
-            (0.19, "#0b1722"),
-            (0.11, "#08738a"),
-        ):
-            glow_radius = radius * scale
-            self._core_glow.append(self.canvas.create_oval(
-                center_x - glow_radius, center_y - glow_radius,
-                center_x + glow_radius, center_y + glow_radius,
-                fill=fill, outline=COLOR_ACCENT_DIM, width=1, tags="reactor",
-            ))
-        self._core_center = self.canvas.create_oval(
-            center_x - radius * 0.055, center_y - radius * 0.055,
-            center_x + radius * 0.055, center_y + radius * 0.055,
-            fill=COLOR_ACCENT_GLOW, outline="#d8fbff", width=2,
-            tags="reactor",
-        )
-        self.canvas.create_text(
-            center_x, center_y + radius * 1.2, text="NEURAL CORE  //  ONLINE",
-            fill=COLOR_TEXT_SECONDARY, font=FONT_MONO_SMALL, tags="reactor",
-        )
-
-        self._update_orbits(center_x, center_y, radius)
-        wraplength = max(180, int(self.chat_frame.winfo_width() * 0.72))
-        for bubble in self._msg_bubbles:
-            bubble.configure(wraplength=wraplength)
-
-    def _update_orbits(self, center_x, center_y, radius):
-        for orbit in self._orbit_rings:
-            rotation = self._pulse_angle * orbit["speed"] + orbit["phase"]
-            points = []
-            for index in range(orbit["count"] + 1):
-                angle = 2 * math.pi * index / orbit["count"] + rotation
-                x = math.cos(angle) * orbit["radius"]
-                y = math.sin(angle) * orbit["radius"] * orbit["tilt"]
-                z = math.sin(angle + orbit["phase"]) * orbit["radius"] * orbit["depth"]
-                x_rot = x * math.cos(rotation) - y * math.sin(rotation)
-                y_rot = x * math.sin(rotation) + y * math.cos(rotation)
-                perspective = 1 / max(0.55, 1 - z / (radius * 4))
-                points.append((
-                    center_x + x_rot * perspective,
-                    center_y + y_rot * perspective,
-                ))
-
-            for index, item in enumerate(orbit["segments"]):
-                self.canvas.coords(item, *points[index], *points[index + 1])
-
-            node_index = int((self._frame_count * orbit["speed"] * 2) % orbit["count"])
-            node_x, node_y = points[node_index]
-            node_size = max(3, radius * 0.035)
-            self.canvas.coords(
-                orbit["node"], node_x - node_size, node_y - node_size,
-                node_x + node_size, node_y + node_size,
-            )
+    def _draw_core(self, c, cx, wave):
+        ramp = self.CORE_LISTEN if self._listening else self.CORE_IDLE
+        base = cx - 10
+        for i, fill in enumerate(ramp):                    # outer → inner layers
+            rad = base * (1.05 - 0.13 * i) * (0.92 + 0.10 * wave)
+            c.create_oval(cx - rad, cx - rad, cx + rad, cx + rad,
+                          fill=fill, outline="", tags="orb")
+        hot = base * (0.16 + 0.05 * wave)                  # hot centre, breathes
+        c.create_oval(cx - hot, cx - hot, cx + hot, cx + hot,
+                      fill=self.HOT_LISTEN if self._listening else self.HOT_IDLE,
+                      outline="", tags="orb")
 
     def _animate(self):
-        self._frame_count += 1
-        self._pulse_angle += 0.05 * ANIMATION_SPEED if 'ANIMATION_SPEED' in dir() else 0.05
+        self._pulse += 0.11
+        self.sphere.angle += 0.018
+        t = self._pulse
+        wave = 0.5 + 0.5 * math.sin(t)
+        c, cx = self.orb, ORB_SIZE / 2
+        c.delete("orb")
 
-        # Update particles
-        for p in self._particles:
-            p.update()
+        # Faint structural ring
+        c.create_oval(6, 6, ORB_SIZE - 6, ORB_SIZE - 6,
+                      outline=COLOR_ACCENT_DIM, width=1, tags="orb")
 
-        # Update voice ring
-        if self._is_listening:
-            pulse = 1 + 0.3 * math.sin(self._pulse_angle * 3)
-            self.voice_ring.itemconfig(self._ring_fill, fill=COLOR_LISTENING)
-            self.voice_ring.coords(
-                self._ring_fill,
-                20 + 5 * (1 - pulse), 20 + 5 * (1 - pulse),
-                50 - 5 * (1 - pulse), 50 - 5 * (1 - pulse),
-            )
-        else:
-            self.voice_ring.itemconfig(self._ring_fill, fill=COLOR_ACCENT)
+        self._draw_core(c, cx, wave)
 
-        # Scan line
-        width = max(self.canvas.winfo_width(), 1)
-        height = max(self.canvas.winfo_height(), 1)
-        self._scan_line_y += 4 * self._scan_direction
-        if self._scan_line_y > height:
-            self._scan_direction = -1
-        elif self._scan_line_y < 0:
-            self._scan_direction = 1
-        self.canvas.delete("scan")
-        self.canvas.create_rectangle(
-            0, self._scan_line_y, width, self._scan_line_y + 2,
-            fill=COLOR_ACCENT, outline="", tags="scan"
-        )
+        ramp = ParticleSphere.RAMP_LISTEN if self._listening else ParticleSphere.RAMP_IDLE
+        near, far = ramp
+        for x, y, z, i in self.sphere.project():
+            depth = (z + 1.0) / 2.0                        # 0 = nearest, 1 = farthest
+            proj = 3.0 / (3.0 + z)                         # perspective scale
+            px = cx + x * (cx - 34) * proj
+            py = cx + y * (cx - 34) * proj
+            shimmer = 1.0 + 0.4 * math.sin(t * 2.0 + self.sphere.phase[i])
+            r = max(0.5, self.sphere.size[i] * proj * shimmer)
+            c.create_oval(px - r, py - r, px + r, py + r,
+                          fill=_lerp(near, far, depth), outline="", tags="orb")
 
-        if self._orbit_rings:
-            radius = min(width * 0.2, height * 0.27, 170)
-            self._update_orbits(width / 2, height * 0.5, radius)
-            if self._core_center:
-                intensity = int(170 + 70 * (0.5 + 0.5 * math.sin(self._pulse_angle * 2)))
-                self.canvas.itemconfig(
-                    self._core_center,
-                    fill=f"#{intensity:02x}ffff",
-                )
+        self.root.after(PULSE_MS, self._animate)
 
-        # Update clock
-        now = time.strftime("%H:%M:%S")
-        self.time_var.set(now)
+    # ─────────────────────────────────────────────────────────────
+    #  Status (real values only)
+    # ─────────────────────────────────────────────────────────────
 
-        # Typing effect
-        if self._typing_active and self._typing_index < len(self._typing_text):
-            self._typing_index += 1
-            if self._typing_bubble:
-                self._typing_bubble.configure(
-                    text=self._typing_text[: self._typing_index] + "▌"
-                )
-                self._scroll_chat()
-            self.root.after(30, self._animate)
+    def _refresh_status(self):
+        try:
+            status = self.orch.get_status()
+        except Exception:
+            self.status_var.set("Offline mode")
+            self.status_dot.configure(text_color=COLOR_WARNING)
             return
-        elif self._typing_active:
-            self._typing_active = False
-            if self._typing_bubble:
-                self._typing_bubble.configure(text=self._typing_text)
-                self._scroll_chat()
-            self._typing_bubble = None
-
-        self.root.after(30, self._animate)
-
-    def _scroll_chat(self):
-        self.chat_frame._parent_canvas.yview_moveto(1.0)
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  MESSAGE DISPLAY
-    # ═══════════════════════════════════════════════════════════════════
-
-    def _add_bubble(self, role: str, text: str, animate: bool = False):
-        """Add a chat bubble with holographic styling."""
-        colors = {
-            "user": COLOR_ACCENT_PURPLE,
-            "jarvis": COLOR_ACCENT,
-            "system": COLOR_WARNING,
-            "error": COLOR_ERROR,
-        }
-        labels = {
-            "user": "You",
-            "jarvis": JARVIS_NAME,
-            "system": "System",
-            "error": "Error",
-        }
-        color = colors.get(role, COLOR_TEXT_DIM)
-        label = labels.get(role, role.title())
-        anchor = "e" if role == "user" else "w"
-        justify = "right" if role == "user" else "left"
-        fg = (
-            COLOR_BG_SURFACE
-            if role in ("jarvis", "system", "error")
-            else COLOR_BG_GLASS
+        self.status_var.set(status_line(status))
+        self.status_dot.configure(
+            text_color=COLOR_SUCCESS if status.get("ai") in ("online", "configured") else COLOR_WARNING,
         )
 
-        frame = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
-        frame.pack(fill="x", padx=10, pady=6)
-
-        bubble = ctk.CTkLabel(
-            frame, text="" if animate else text, font=FONT_UI,
-            text_color=COLOR_TEXT_PRIMARY, fg_color=fg,
-            corner_radius=12, justify=justify,
-            wraplength=max(180, int(self.chat_frame.winfo_width() * 0.72)),
-        )
-        bubble.pack(anchor=anchor, padx=8, pady=4)
-
-        # Small label
-        lbl = ctk.CTkLabel(
-            frame, text=label, font=FONT_MONO_SMALL,
-            text_color=color,
-        )
-        lbl.pack(anchor=anchor, padx=8)
-
-        self._msg_bubbles.append(bubble)
-        if animate:
-            self._typing_bubble = bubble
-        self._scroll_chat()
-
-        # Add to activity log
-        self._log_activity(role, text)
-
-    def _log_activity(self, role: str, text: str):
-        timestamp = time.strftime("%H:%M:%S")
-        prefix = "▶" if role == "user" else "◀"
-        color_tag = COLOR_ACCENT if role == "jarvis" else COLOR_ACCENT_PURPLE
-        self.activity_log.insert(
-            "end", f"[{timestamp}] {prefix} {text[:80]}\n",
-        )
-        self.activity_log.see("end")
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  CALLBACKS & ACTIONS
-    # ═══════════════════════════════════════════════════════════════════
+    # ─────────────────────────────────────────────────────────────
+    #  Conversation
+    # ─────────────────────────────────────────────────────────────
 
     def _on_message(self, role: str, text: str):
-        """Thread-safe callback from orchestrator."""
-        self.root.after(0, self._add_bubble, role, text, role == "jarvis")
-        self.root.after(0, self._update_status, role, text)
-        self.root.after(0, self._refresh_system_status)
+        """Orchestrator callback (called from a worker thread)."""
+        self.root.after(0, self._add_bubble, role, text)
 
-    def _refresh_system_status(self):
-        status = self.orch.get_status()
-        memory = status["memory"]
-        rows = {
-            "AI Provider": (status["ai"], {
-                "online": COLOR_SUCCESS,
-                "configured": COLOR_WARNING,
-                "offline": COLOR_WARNING,
-                "fallback": COLOR_ERROR,
-            }),
-            "Speech Output": (status["tts"], {
-                "online": COLOR_SUCCESS,
-                "offline": COLOR_ERROR,
-            }),
-            "Microphone": (status["stt"], {
-                "online": COLOR_SUCCESS,
-                "offline": COLOR_WARNING,
-            }),
-            "Vector Memory": (memory["vector_memory"], {
-                "online": COLOR_SUCCESS,
-                "offline": COLOR_WARNING,
-            }),
-        }
-        for label, (value, colors) in rows.items():
-            widget = self._status_values.get(label)
-            if widget:
-                widget.configure(
-                    text=value.upper(),
-                    text_color=colors.get(value, COLOR_TEXT_DIM),
-                )
+    def _add_bubble(self, role: str, text: str):
+        if self._placeholder is not None:
+            self._placeholder.destroy()
+            self._placeholder = None
 
-        ai_state = status["ai"].upper()
-        self.ai_status.configure(
-            text=ai_state,
-            text_color={
-                "ONLINE": COLOR_SUCCESS,
-                "CONFIGURED": COLOR_WARNING,
-                "OFFLINE": COLOR_WARNING,
-                "FALLBACK": COLOR_ERROR,
-            }.get(ai_state, COLOR_TEXT_DIM),
+        is_user = role == "user"
+        row = ctk.CTkFrame(self.chat, fg_color="transparent")
+        row.pack(fill="x", pady=3)
+        bubble = ctk.CTkLabel(
+            row, text=text, font=FONT_UI, justify="left",
+            wraplength=520, corner_radius=12, padx=12, pady=8,
+            fg_color=COLOR_BG_GLASS if is_user else COLOR_BG_SURFACE,
+            text_color=COLOR_TEXT_PRIMARY,
         )
+        bubble.pack(anchor="e" if is_user else "w")
 
-    def _update_status(self, role: str, text: str):
-        if role == "error":
-            status = f"Attention: {text}"
-        elif role == "system":
-            status = text
-        elif role == "user":
-            status = "Processing your request…"
-        else:
-            status = "Response ready."
-        self.status_var.set(status[:100])
+        # customtkinter exposes no public scroll API — nudge to bottom.
+        try:
+            self.chat._parent_canvas.yview_moveto(1.0)
+        except Exception:
+            pass
 
-    def _greet(self):
-        greeting = f"Hello {USER_NAME}. {JARVIS_NAME} is online. All systems operational."
-        self._add_bubble("jarvis", greeting)
-        self.orch.tts.speak(greeting)
-        self.status_var.set("Ready. Awaiting your command.")
+        if role != "user":
+            self._refresh_status()
+            self.caption_var.set("Ready. How can I help?")
 
-    def _send_input(self):
-        text = self.input_entry.get().strip()
+    def _send_from_entry(self):
+        text = self.entry.get().strip()
         if not text:
             return
-        self.input_entry.delete(0, "end")
-        # Orchestrator callback (_on_message -> _add_bubble) handles the UI bubble
-        threading.Thread(
-            target=self._process_async, args=(text,), daemon=True
-        ).start()
+        self.entry.delete(0, "end")
+        self._send(text)
 
-    def _send_command(self, cmd: str):
-        self.input_entry.delete(0, "end")
-        # Orchestrator callback handles the UI bubble
-        threading.Thread(
-            target=self._process_async, args=(cmd,), daemon=True
-        ).start()
+    def _send(self, text: str):
+        self.caption_var.set("Thinking…")
+        threading.Thread(target=self._process, args=(text,), daemon=True).start()
 
-    def _process_async(self, text: str):
-        response = self.orch.process_sync(text)
-        # Trigger typing effect
-        self.root.after(0, self._type_text, response)
+    def _process(self, text: str):
+        try:
+            self.orch.process_sync(text)
+        except Exception as exc:
+            self.root.after(0, self._add_bubble, "error", f"Something went wrong: {exc}")
+            self.root.after(0, self.caption_var.set, "Ready. How can I help?")
 
-    def _type_text(self, text: str):
-        self._typing_text = text
-        self._typing_index = 0
-        self._typing_active = True
-        if self._typing_bubble is None and self._msg_bubbles:
-            self._typing_bubble = self._msg_bubbles[-1]
-        self.root.after(30, self._animate)
+    # ─────────────────────────────────────────────────────────────
+    #  Voice
+    # ─────────────────────────────────────────────────────────────
 
     def _toggle_mic(self):
-        if self._is_listening:
-            self._is_listening = False
-            self.mic_btn.configure(fg_color=COLOR_ACCENT_PURPLE, text="🎤")
-            self.status_var.set("Microphone stopped.")
-        else:
-            if not self.orch.stt.is_available:
-                self.status_var.set("Microphone unavailable — PyAudio not installed.")
-                return
-            self._is_listening = True
-            self.mic_btn.configure(fg_color=COLOR_ERROR, text="⏹")
-            self.status_var.set("Listening…")
-            threading.Thread(target=self._listen_loop, daemon=True).start()
+        if self._listening:
+            self._stop_listening("Stopped. How can I help?")
+            return
+        self._start_listening()
+
+    def _start_listening(self):
+        if not getattr(self.orch.stt, "is_available", False):
+            reason = getattr(self.orch.stt, "unavailable_reason", "")
+            self.caption_var.set(f"Microphone unavailable — {reason or 'check microphone'}")
+            return
+        self._listening = True
+        if hasattr(self.orch.stt, "on_speech_start"):
+            self.orch.stt.on_speech_start = lambda: self.root.after(
+                0, self.caption_var.set, "🎤 Hearing you — keep talking…"
+            )
+        self.mic_btn.configure(text="⏹", fg_color=COLOR_ACCENT_RED)
+        self.caption_var.set("Listening… say something")
+        threading.Thread(target=self._listen_loop, daemon=True).start()
+
+    def _auto_listen(self):
+        """Hands-free: after JARVIS finishes speaking, listen for a follow-up."""
+        if not self._listening:
+            self._start_listening()
+
+    def _stop_listening(self, caption: str):
+        self._listening = False
+        if hasattr(self.orch.stt, "on_speech_start"):
+            self.orch.stt.on_speech_start = None
+        self.mic_btn.configure(text="🎤", fg_color=COLOR_ACCENT_DIM)
+        self.caption_var.set(caption)
+        self._set_level(0.0)
 
     def _listen_loop(self):
-        while self._is_listening:
+        while self._listening:
             try:
                 text = self.orch.stt.listen()
-                if text:
-                    self.root.after(0, self._send_command, text)
-            except Exception:
-                pass
+            except Exception as e:
+                text = None
+                self.orch.stt.last_error = f"Microphone error ({e})"
+            if text and self._listening:
+                self._listening = False
+                if hasattr(self.orch.stt, "on_speech_start"):
+                    self.orch.stt.on_speech_start = None
+                self.root.after(0, lambda: self.mic_btn.configure(text="🎤", fg_color=COLOR_ACCENT_DIM))
+                self.root.after(0, self.caption_var.set, "Thinking…")
+                self.root.after(0, self._send, text)
+                return
+            error = getattr(self.orch.stt, "last_error", None)
+            if error:
+                # Stop cleanly instead of silently listening forever
+                self._listening = False
+                if hasattr(self.orch.stt, "on_speech_start"):
+                    self.orch.stt.on_speech_start = None
+                self.root.after(
+                    0, lambda: self.mic_btn.configure(text="🎤", fg_color=COLOR_ACCENT_DIM)
+                )
+                self.root.after(0, self.caption_var.set, error)
+                self.root.after(0, self._set_level, 0.0)
+                return
+            # No speech within STT_TIMEOUT and no error — quietly go back to Ready
+            self._listening = False
+            if hasattr(self.orch.stt, "on_speech_start"):
+                self.orch.stt.on_speech_start = None
+            self.root.after(
+                0, lambda: self.mic_btn.configure(text="🎤", fg_color=COLOR_ACCENT_DIM)
+            )
+            self.root.after(0, self.caption_var.set, "Ready. How can I help?")
+            self.root.after(0, self._set_level, 0.0)
+            return
+
+    # ─────────────────────────────────────────────────────────────
+    #  Lifecycle
+    # ─────────────────────────────────────────────────────────────
+
+    def _greet(self):
+        greeting = f"Hello {USER_NAME}. {JARVIS_NAME} is online."
+        self._add_bubble("jarvis", greeting)
+        self.orch.tts.speak(greeting)
 
     def _on_close(self):
-        self.orch.shutdown()
+        self._listening = False
+        try:
+            self.orch.shutdown()
+        except Exception:
+            pass
         self.root.destroy()
 
     def run(self):

@@ -8,13 +8,14 @@ The application entry point is `main.py`. The actively used implementation is in
 
 ## Features
 
-- CustomTkinter desktop interface with an animated reactor, conversation view, quick commands, and activity panel.
+- CustomTkinter voice-first single-screen interface: clickable arc reactor (click to talk), slim chat, and quick commands.
 - Optional AI responses through OpenAI-compatible providers, including OpenAI, OpenRouter, Grok, and Groq.
 - Offline fallback responses when no API key is configured or a hosted AI request fails.
 - Built-in skills for system information, approved app and website shortcuts, browser-based web search, and memory.
-- Conversation history stored locally as JSON. Semantic memory uses ChromaDB and sentence-transformers when available.
+- Conversation history stored locally as JSON. Semantic memory uses ChromaDB and sentence-transformers when available — install them with `python -m pip install -e ".[vector]"`; without it, memory falls back to basic in-memory notes.
 - Windows text-to-speech through PowerShell System.Speech.
-- Optional microphone input through SpeechRecognition and PyAudio.
+- Hands-free voice loop: after JARVIS finishes speaking it automatically re-listens, with a live voice-level meter and a "hearing you" indication.
+- Optional microphone input through sounddevice (capture) and SpeechRecognition (Google Web Speech).
 - Command-line mode for text-based interaction.
 
 ## Requirements
@@ -22,7 +23,7 @@ The application entry point is `main.py`. The actively used implementation is in
 - Python 3.10 or later.
 - Windows is recommended. The GUI is built with CustomTkinter; the included TTS backend uses Windows PowerShell System.Speech.
 - Internet access is needed for hosted AI providers, browser-based web search, Google speech recognition, and downloading the embedding model on first use.
-- Microphone input requires a working microphone and PyAudio. PyAudio is optional and is not installed by the project dependencies; text interaction remains available without it.
+- Microphone input uses `sounddevice` (installed automatically; on Linux you may need `sudo apt install libportaudio2`). On machines without a usable microphone or PortAudio, voice input is disabled and text interaction remains available. Google Web Speech sends the recorded phrase to a Google service over the internet for transcription.
 - ChromaDB or embedding-model initialization may be unavailable on some systems; memory then falls back to basic in-memory notes.
 
 ## Quick start

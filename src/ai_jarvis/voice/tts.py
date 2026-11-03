@@ -21,6 +21,7 @@ class TTS:
         self._use_powershell = self._check_powershell()
         self._queue: "queue.Queue[str | None]" = queue.Queue()
         self._worker = threading.Thread(target=self._run, daemon=True)
+        self.on_idle = None            # optional callable, fired when speech finishes
         self._worker.start()
         if self._use_powershell:
             print("[TTS] PowerShell System.Speech backend active")
@@ -55,8 +56,15 @@ class TTS:
         while True:
             item = self._queue.get()
             if item is None:  # shutdown signal
+                self._queue.task_done()
                 break
             self._speak_now(item)
+            # Fired only when JARVIS has finished everything it had to say
+            if self.on_idle and self._queue.empty():
+                try:
+                    self.on_idle()
+                except Exception:
+                    pass
             self._queue.task_done()
 
     def _speak_now(self, text: str) -> None:
