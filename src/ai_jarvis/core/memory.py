@@ -15,7 +15,6 @@ from pathlib import Path
 
 try:
     import chromadb
-    from sentence_transformers import SentenceTransformer
     _VECTOR_AVAILABLE = True
 except ImportError:
     _VECTOR_AVAILABLE = False
@@ -53,7 +52,6 @@ class MemorySystem:
 
         self._client = None
         self._collection = None
-        self._embedder = None
         self._fallback_notes: list[str] = []
         if VECTOR_MEMORY_ENABLED and _VECTOR_AVAILABLE:
             self._init_vector()
@@ -63,8 +61,9 @@ class MemorySystem:
             self.chroma_dir.mkdir(parents=True, exist_ok=True)
             self._client = chromadb.PersistentClient(path=str(self.chroma_dir))
             self._collection = self._client.get_or_create_collection(COLLECTION_NAME)
-            self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
-            print("[Memory] Vector store initialized (ChromaDB + embeddings)")
+            # ChromaDB supplies its own default embeddings; no extra model
+            # download or embedding library is needed.
+            print("[Memory] Vector store initialized (ChromaDB)")
         except Exception as e:
             print(f"[Memory] Vector init failed: {e}")
             self._collection = None

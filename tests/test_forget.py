@@ -18,9 +18,6 @@ def make_memory(monkeypatch, tmp_path, vector=False, client_cls=None):
             SimpleNamespace(PersistentClient=lambda path: client_cls()),
             raising=False,
         )
-        monkeypatch.setattr(
-            memory_module, "SentenceTransformer", lambda name: object(), raising=False,
-        )
     return MemorySystem(tmp_path)
 
 

@@ -24,7 +24,7 @@ A Python desktop assistant that talks, listens, and remembers — built around a
 | Python ≥ 3.10 | Tested on 3.10 and 3.14 (CI) |
 | Platform | Windows recommended (native TTS). On Linux/macOS, TTS is disabled; GUI and everything else works |
 | Microphone | Optional. On Linux, install `libportaudio2`; without a usable mic, voice input disables cleanly |
-| Internet | For AI providers, Google Web Speech transcription (voice only), and the one-time embedding-model download if `.[vector]` is used |
+| Internet | For AI providers, Google Web Speech transcription (voice only), and Wikipedia/DuckDuckGo lookups. ChromaDB embeddings run locally |
 | API key | Optional — the app is useful without one (skills + offline fallback) |
 
 ## Quick start
@@ -108,7 +108,7 @@ tests/                     Unit tests (no display required)
 
 ```powershell
 python -m pip install -e ".[dev]"   # pytest, black, mypy, ruff
-python -m pip install -e ".[vector]" # optional: ChromaDB + sentence-transformers
+python -m pip install -e ".[vector]" # optional: ChromaDB for semantic memory
 python -m pytest
 ```
 
@@ -125,7 +125,7 @@ python -m pytest
 - Native TTS is Windows-only (PowerShell System.Speech); other platforms get silent text responses.
 - No wake word — after JARVIS speaks, the microphone arms itself for 5 seconds and disarms on silence; click the reactor or the mic button to override.
 - Commands are limited to a whitelist of apps/websites (by design; no arbitrary shell access).
-- Semantic memory downloads an embedding model on first use and pulls in PyTorch-sized dependencies — that's why it's an optional extra.
+- Semantic memory needs the optional `.[vector]` extra (ChromaDB); embeddings are computed locally by ChromaDB's default model, with no separate download.
 
 ## Author
 
