@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import operator
+import os
 import re
 import subprocess
 import webbrowser
@@ -187,10 +188,12 @@ class SystemSkill(BaseSkill):
         for key, cmd in APPROVED_APPS.items():
             if key in target.lower():
                 try:
-                    if cmd.startswith("start "):
-                        subprocess.Popen(cmd, shell=True)
-                    else:
-                        subprocess.Popen(cmd, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                    # CREATE_NO_WINDOW is Windows-only; referencing it on
+                    # Linux/macOS raises AttributeError and breaks launching.
+                    kwargs = {"shell": True}
+                    if os.name == "nt":
+                        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                    subprocess.Popen(cmd, **kwargs)
                     return SkillResult(success=True, response=f"Opening {key.title()}.")
                 except Exception as e:
                     return SkillResult(success=False, response=f"Failed to launch {key}: {e}")

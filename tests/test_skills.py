@@ -1,5 +1,8 @@
 import asyncio
 
+from unittest.mock import Mock
+
+import ai_jarvis.skills.system as system_module
 from ai_jarvis.skills.base import BaseSkill, SkillResult
 from ai_jarvis.skills.system import SystemSkill, _safe_eval
 
@@ -115,3 +118,28 @@ def test_math_division_by_zero_degrades_gracefully():
     result = run_math("calculate 5 / 0")
     assert result.success is False
     assert result.speak is True  # failure here is a user-facing answer, not a crash
+
+
+def test_open_app_launches_on_non_windows(monkeypatch):
+    popen = Mock()
+    monkeypatch.setattr(system_module.subprocess, "Popen", popen)
+    monkeypatch.setattr(system_module.os, "name", "posix")
+
+    skill = make_math_skill()
+    result = asyncio.run(skill.execute(skill.match("open notepad"), "open notepad"))
+
+    assert result.success is True
+    assert "creationflags" not in popen.call_args.kwargs
+    assert popen.call_args.kwargs["shell"] is True
+
+
+def test_open_app_sets_no_window_flag_on_windows(monkeypatch):
+    popen = Mock()
+    monkeypatch.setattr(system_module.subprocess, "Popen", popen)
+    monkeypatch.setattr(system_module.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(system_module.os, "name", "nt")
+
+    skill = make_math_skill()
+    asyncio.run(skill.execute(skill.match("open notepad"), "open notepad"))
+
+    assert popen.call_args.kwargs["creationflags"] == 0x08000000
