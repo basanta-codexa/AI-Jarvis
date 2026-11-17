@@ -3,10 +3,11 @@ System skill — time, date, status, apps, websites, system info.
 """
 from __future__ import annotations
 
+import ast
+import operator
 import re
 import subprocess
 import webbrowser
-import urllib.parse
 from datetime import datetime
 
 try:
@@ -19,6 +20,52 @@ from ai_jarvis.skills.base import BaseSkill, SkillResult
 from ai_jarvis.config.settings import (
     APPROVED_APPS, APPROVED_WEBSITES, USER_NAME, JARVIS_NAME,
 )
+
+# Arithmetic whitelist for the math skill. Exponentiation is deliberately
+# excluded: `9**9**9` expands to an integer with hundreds of millions of
+# digits and would exhaust memory/CPU. eval() with a regex "sanitiser" is not
+# safe — the regex leaves `**` intact.
+_ALLOWED_BINOPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+}
+_ALLOWED_UNARYOPS = {
+    ast.UAdd: operator.pos,
+    ast.USub: operator.neg,
+}
+_MAX_LITERAL = 10**12
+_MAX_NODES = 64
+
+
+def _safe_eval(expr: str) -> int | float:
+    """Evaluate a simple arithmetic expression without eval().
+
+    Allowed: integers/floats, +, -, *, /, unary +/-, parentheses.
+    Rejected: anything else (notably **, //, %, names, calls, attributes).
+    Raises ValueError/ZeroDivisionError/SyntaxError on invalid input.
+    """
+    tree = ast.parse(expr, mode="eval")
+    if len(list(ast.walk(tree))) > _MAX_NODES:
+        raise ValueError("expression too complex")
+
+    def visit(node):
+        if isinstance(node, ast.Expression):
+            return visit(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            if abs(node.value) > _MAX_LITERAL:
+                raise ValueError("number too large")
+            return node.value
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _ALLOWED_UNARYOPS:
+            return _ALLOWED_UNARYOPS[type(node.op)](visit(node.operand))
+        if isinstance(node, ast.BinOp) and type(node.op) in _ALLOWED_BINOPS:
+            left = visit(node.left)
+            right = visit(node.right)
+            return _ALLOWED_BINOPS[type(node.op)](left, right)
+        raise ValueError("unsupported expression")
+
+    return visit(tree)
 
 
 class SystemSkill(BaseSkill):
@@ -200,10 +247,8 @@ class SystemSkill(BaseSkill):
         )
 
     def _handle_math(self, text: str) -> SkillResult:
-        """Handle simple math calculations."""
-        import re as _re
-        lower = text.lower()
-        expr = lower
+        """Handle simple math calculations safely (no eval())."""
+        expr = text.lower()
         expr = expr.replace("plus", "+")
         expr = expr.replace("minus", "-")
         expr = expr.replace("times", "*")
@@ -211,13 +256,12 @@ class SystemSkill(BaseSkill):
         expr = expr.replace("divided by", "/")
         expr = expr.replace("divide by", "/")
         expr = expr.replace("x", "*")
-        expr = _re.sub(r"[^0-9\s\+\-\*\/\(\)\.]", "", expr)
-        expr = expr.strip()
+        expr = re.sub(r"[^0-9\s\+\-\*\/\(\)\.]", "", expr).strip()
         if expr and any(op in expr for op in "+-*/"):
             try:
-                result = eval(expr)  # nosec - offline local eval only
+                result = _safe_eval(expr)
                 return SkillResult(success=True, response=f"The result is {result}.")
-            except Exception:
+            except (ValueError, ZeroDivisionError, SyntaxError, TypeError, OverflowError):
                 pass
         return SkillResult(
             success=False,
