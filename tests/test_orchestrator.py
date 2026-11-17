@@ -216,6 +216,30 @@ def test_ai_fallback_adds_wikipedia_reference_for_lookup_questions(monkeypatch):
     assert "Python is a programming language." in system_prompt
 
 
+def test_lookup_trigger_covers_common_natural_phrasings(monkeypatch):
+    _patch_async_client(monkeypatch)
+    looked_up = []
+    monkeypatch.setattr(
+        orchestrator_module,
+        "wikipedia_summary",
+        lambda query: looked_up.append(query) or None,
+    )
+    orchestrator = make_orchestrator()
+
+    phrasings = {
+        "What's quantum computing?": "quantum computing",
+        "I'm curious about black holes": "black holes",
+        "info on the Roman Empire": "the Roman Empire",
+        "details about coffee": "coffee",
+        "learn about bees": "bees",
+        "define serendipity": "serendipity",
+    }
+    for question, expected in phrasings.items():
+        asyncio.run(orchestrator._ai_fallback(question))
+
+    assert looked_up == list(phrasings.values())
+
+
 def test_ai_fallback_uses_wikipedia_search_when_no_exact_article(monkeypatch):
     create = _patch_async_client(monkeypatch)
     searched = []

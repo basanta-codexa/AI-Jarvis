@@ -24,7 +24,9 @@ class JarvisOrchestrator:
     """Main agent controller — the brain of JARVIS."""
 
     _LOOKUP_RE = re.compile(
-        r"^\s*(?:what is|what's|who is|who's|define|tell me about|explain)\s+(.+?)\??\s*$",
+        r"^\s*(?:(?:i'm|i am)\s+)?(?:what is|what's|who is|who's|define|"
+        r"tell me about|explain|curious about|info on|information on|"
+        r"details about|facts about|learn about)\s+(.+?)\??\s*$",
         re.IGNORECASE,
     )
 
