@@ -15,6 +15,7 @@ from ai_jarvis.core.tools import ToolRegistry, ToolSpec
 def no_wikipedia_network(monkeypatch):
     """No test may make a real network request; override per test if needed."""
     monkeypatch.setattr(orchestrator_module, "wikipedia_summary", lambda query: None)
+    monkeypatch.setattr(orchestrator_module, "wikipedia_search", lambda query, limit=3: None)
 
 
 def make_orchestrator(skill=None):
@@ -212,6 +213,26 @@ def test_ai_fallback_adds_wikipedia_reference_for_lookup_questions(monkeypatch):
     system_prompt = create.call_args.kwargs["messages"][0]["content"]
     assert "Verified reference" in system_prompt
     assert "Python is a programming language." in system_prompt
+
+
+def test_ai_fallback_uses_wikipedia_search_when_no_exact_article(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    searched = []
+    monkeypatch.setattr(orchestrator_module, "wikipedia_summary", lambda query: None)
+    monkeypatch.setattr(
+        orchestrator_module,
+        "wikipedia_search",
+        lambda query, limit=3: searched.append((query, limit))
+        or "Quantum computing: Uses qubits.",
+    )
+    orchestrator = make_orchestrator()
+
+    asyncio.run(orchestrator._ai_fallback("What is quantum computing?"))
+
+    assert searched == [("quantum computing", 3)]
+    system_prompt = create.call_args.kwargs["messages"][0]["content"]
+    assert "Related Wikipedia articles about quantum computing" in system_prompt
+    assert "Uses qubits." in system_prompt
 
 
 def test_ai_fallback_skips_lookup_for_non_lookup_questions(monkeypatch):

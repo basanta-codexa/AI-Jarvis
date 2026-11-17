@@ -13,7 +13,7 @@ from openai import APIError, AsyncOpenAI
 
 from ai_jarvis.core.plugin_manager import PluginManager
 from ai_jarvis.core.memory import MemorySystem
-from ai_jarvis.core.lookup import wikipedia_summary
+from ai_jarvis.core.lookup import wikipedia_search, wikipedia_summary
 from ai_jarvis.core.tools import ToolRegistry, build_default_registry
 from ai_jarvis.voice.tts import TTS
 from ai_jarvis.voice.stt import STT
@@ -122,9 +122,12 @@ class JarvisOrchestrator:
         if not subject:
             return None
         summary = await asyncio.to_thread(wikipedia_summary, subject)
-        if not summary:
-            return None
-        return f"Reference about {subject}: {summary}"
+        if summary:
+            return f"Reference about {subject}: {summary}"
+        results = await asyncio.to_thread(wikipedia_search, subject, 3)
+        if results:
+            return f"Related Wikipedia articles about {subject}:\n{results}"
+        return None
 
     async def _ai_fallback(self, text: str) -> str:
         """AI-powered response for open-ended questions."""
