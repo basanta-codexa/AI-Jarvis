@@ -50,9 +50,15 @@ def make_orchestrator():
             remember=Mock(return_value="Locked into memory: tea"),
             recall=Mock(return_value=["My favourite tea is jasmine.", "No relevant memories found."]),
         ),
-        plugins=SimpleNamespace(skills={"system": SimpleNamespace(
-            _handle_status=lambda text: SimpleNamespace(response="CPU usage at 5%.")
-        )}),
+        plugins=SimpleNamespace(skills={
+            "system": SimpleNamespace(
+                _handle_status=lambda text: SimpleNamespace(response="CPU usage at 5%."),
+                _handle_open=lambda text: SimpleNamespace(response=f"Opening: {text}"),
+            ),
+            "web": SimpleNamespace(
+                _handle_search=lambda text: SimpleNamespace(response=f"Searching: {text}"),
+            ),
+        }),
         request_shutdown=False,
     )
 
@@ -62,7 +68,7 @@ def test_default_registry_exposes_expected_capabilities():
 
     assert registry.names() == [
         "get_time", "get_date", "remember_fact", "recall_facts",
-        "get_system_status", "request_shutdown",
+        "get_system_status", "open_target", "search_web", "request_shutdown",
     ]
     assert all(schema["function"]["parameters"]["type"] == "object" for schema in registry.schemas())
 
@@ -78,6 +84,15 @@ def test_default_registry_handlers_use_existing_subsystems():
     assert "My favourite tea is jasmine." in registry.dispatch("recall_facts", {"query": "tea"})
     assert "No relevant memories found." not in registry.dispatch("recall_facts", {"query": "tea"})
     assert registry.dispatch("get_system_status") == "CPU usage at 5%."
+
+
+def test_open_and_search_tools_delegate_to_existing_skills():
+    registry = build_default_registry(make_orchestrator())
+
+    assert registry.dispatch("open_target", {"target": "notepad"}) == "Opening: open notepad"
+    assert registry.dispatch("search_web", {"query": "python"}) == "Searching: search for python"
+    assert registry.dispatch("open_target", {"target": "   "}) == "No app or website was specified."
+    assert registry.dispatch("search_web", {"query": ""}) == "No search query was provided."
 
 
 def test_request_shutdown_tool_sets_flag():

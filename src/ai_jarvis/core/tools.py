@@ -95,6 +95,22 @@ def build_default_registry(orchestrator) -> ToolRegistry:
             return "System monitoring is unavailable."
         return skill._handle_status("").response
 
+    def open_target(target: str) -> str:
+        if not target or not target.strip():
+            return "No app or website was specified."
+        skill = orchestrator.plugins.skills.get("system")
+        if skill is None:
+            return "The launcher is unavailable."
+        return skill._handle_open(f"open {target.strip()}").response
+
+    def search_web(query: str) -> str:
+        if not query or not query.strip():
+            return "No search query was provided."
+        skill = orchestrator.plugins.skills.get("web")
+        if skill is None:
+            return "Web search is unavailable."
+        return skill._handle_search(f"search for {query.strip()}").response
+
     def request_shutdown() -> str:
         orchestrator.request_shutdown = True
         return "Shutdown requested."
@@ -121,6 +137,16 @@ def build_default_registry(orchestrator) -> ToolRegistry:
         "get_system_status", "Report CPU, memory and battery usage.",
         {"type": "object", "properties": {}},
         get_system_status,
+    ))
+    registry.register(ToolSpec(
+        "open_target", "Open an approved app or website on the user's machine.",
+        _string_arg("target", "The app or website, e.g. 'notepad', 'vs code', 'github'."),
+        open_target,
+    ))
+    registry.register(ToolSpec(
+        "search_web", "Open a web search for a query in the user's browser.",
+        _string_arg("query", "What to search for."),
+        search_web,
     ))
     registry.register(ToolSpec(
         "request_shutdown", "Shut down the assistant when the user asks to exit.",
