@@ -118,6 +118,19 @@ def test_ai_fallback_grounds_answer_in_relevant_memories(monkeypatch):
     orchestrator.memory.recall.assert_called_once_with("What tea do I like?", n=3)
 
 
+def test_ai_fallback_includes_current_local_datetime(monkeypatch):
+    from datetime import datetime
+
+    create = _patch_async_client(monkeypatch)
+    orchestrator = make_orchestrator()
+
+    asyncio.run(orchestrator._ai_fallback("Is it a weekday?"))
+
+    system_prompt = create.call_args.kwargs["messages"][0]["content"]
+    assert "The current local date and time is" in system_prompt
+    assert str(datetime.now().year) in system_prompt
+
+
 def test_ai_fallback_ignores_empty_memory_results(monkeypatch):
     create = _patch_async_client(monkeypatch)
     orchestrator = make_orchestrator()

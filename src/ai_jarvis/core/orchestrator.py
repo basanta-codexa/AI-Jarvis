@@ -127,9 +127,12 @@ class JarvisOrchestrator:
                 ):
                     history = history[:-1]
 
+                from datetime import datetime
+                local_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
                 system_prompt = (
                     f"You are {settings.JARVIS_NAME}, a helpful, witty, intelligent personal AI "
                     f"assistant inspired by Iron Man's J.A.R.V.I.S. You are talking with {settings.USER_NAME}. "
+                    f"The current local date and time is {local_time}. "
                     "Keep responses concise, helpful, and slightly formal."
                 )
                 memories = self._recall_for_prompt(text)
