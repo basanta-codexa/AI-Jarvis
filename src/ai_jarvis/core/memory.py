@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,22 @@ except ImportError:
 from ai_jarvis.config.settings import VECTOR_MEMORY_ENABLED
 
 COLLECTION_NAME = "jarvis_memory"
+
+# Words that carry no recall signal in a natural-language question.
+_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been",
+    "do", "does", "did", "i", "me", "my", "you", "your", "it", "its",
+    "to", "of", "for", "in", "on", "at", "with", "about", "from",
+    "what", "who", "when", "where", "why", "how", "which", "tell",
+    "please", "that", "this", "have", "has", "had",
+})
+
+
+def _tokens(text: str) -> set[str]:
+    return {
+        word for word in re.findall(r"[a-z0-9]+", text.lower())
+        if word not in _STOPWORDS
+    }
 
 
 class MemorySystem:
@@ -121,8 +138,20 @@ class MemorySystem:
             docs = results.get("documents", [[]])[0]
             return docs if docs else ["No relevant memories found."]
         query_lower = query.lower()
-        matches = [note for note in self._fallback_notes if query_lower in note.lower()]
-        return matches if matches else ["No relevant memories found."]
+        query_tokens = _tokens(query)
+        if not query_tokens:
+            return ["No relevant memories found."]
+
+        scored: list[tuple[int, int, str]] = []
+        for index, note in enumerate(self._fallback_notes):
+            if query_lower in note.lower():
+                score = 100 + len(query_tokens)   # exact phrase wins
+            else:
+                score = len(query_tokens & _tokens(note))
+            if score:
+                scored.append((score, index, note))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [note for _, _, note in scored[:n]] or ["No relevant memories found."]
 
     def forget_all(self) -> str | None:
         """Erase everything.

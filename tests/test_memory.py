@@ -35,3 +35,35 @@ def test_fallback_memory_can_recall_and_forget(monkeypatch, tmp_path):
 
     assert memory.recall("jasmine") == ["No relevant memories found."]
     assert memory.get_all_history() == []
+
+
+def test_fallback_recall_matches_rephrased_question(monkeypatch, tmp_path):
+    memory = make_memory(monkeypatch, tmp_path)
+    memory.remember("My favourite tea is jasmine.")
+
+    assert memory.recall("what tea do I like?") == ["My favourite tea is jasmine."]
+
+
+def test_fallback_recall_ranks_by_token_overlap(monkeypatch, tmp_path):
+    memory = make_memory(monkeypatch, tmp_path)
+    memory.remember("I drive a blue car.")
+    memory.remember("My blue car needs new tires.")
+
+    results = memory.recall("blue car tires")
+
+    assert results[0] == "My blue car needs new tires."
+
+
+def test_fallback_recall_ignores_stopword_only_query(monkeypatch, tmp_path):
+    memory = make_memory(monkeypatch, tmp_path)
+    memory.remember("I like tea.")
+
+    assert memory.recall("what is it?") == ["No relevant memories found."]
+
+
+def test_fallback_recall_respects_result_limit(monkeypatch, tmp_path):
+    memory = make_memory(monkeypatch, tmp_path)
+    for note in ("tea one", "tea two", "tea three"):
+        memory.remember(note)
+
+    assert len(memory.recall("tea", n=2)) == 2
