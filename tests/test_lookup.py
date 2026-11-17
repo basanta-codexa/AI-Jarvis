@@ -3,7 +3,7 @@ import json
 import urllib.error
 from contextlib import nullcontext
 
-from ai_jarvis.core.lookup import wikipedia_search, wikipedia_summary
+from ai_jarvis.core.lookup import duckduckgo_answer, wikipedia_search, wikipedia_summary
 
 
 def fake_opener(payload, recorder=None):
@@ -114,3 +114,33 @@ def test_wikipedia_search_survives_network_error():
         raise OSError("offline")
 
     assert wikipedia_search("AI", opener=broken) is None
+
+
+def test_duckduckgo_answer_prefers_direct_answer():
+    seen = []
+    opener = fake_opener(
+        {"Answer": "42", "AbstractText": "A number.", "AbstractSource": "Wikipedia"},
+        recorder=seen,
+    )
+
+    result = duckduckgo_answer("the answer", opener=opener)
+
+    assert result == "42"
+    assert "format=json" in seen[0][0].full_url
+    assert "q=the+answer" in seen[0][0].full_url
+
+
+def test_duckduckgo_answer_falls_back_to_abstract_with_source():
+    opener = fake_opener({"AbstractText": "A short explanation.", "AbstractSource": "Wikipedia"})
+
+    assert duckduckgo_answer("anything", opener=opener) == "[Wikipedia] A short explanation."
+
+
+def test_duckduckgo_answer_returns_none_for_empty_or_broken():
+    assert duckduckgo_answer("nothing", opener=fake_opener({})) is None
+    assert duckduckgo_answer("  ", opener=fake_opener({})) is None
+
+    def broken(request, timeout=None):
+        raise OSError("offline")
+
+    assert duckduckgo_answer("AI", opener=broken) is None

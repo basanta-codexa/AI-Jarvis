@@ -13,6 +13,7 @@ import urllib.request
 from typing import Callable, Optional
 
 _API_URL = "https://en.wikipedia.org/w/api.php"
+_DDG_URL = "https://api.duckduckgo.com/"
 _USER_AGENT = "AI-JARVIS/2.0 (personal assistant; contact: local user)"
 _MAX_CHARS = 600
 
@@ -107,5 +108,52 @@ def wikipedia_search(
                 snippet = snippet[:240].rsplit(" ", 1)[0] + "…"
             lines.append(f"{title}: {snippet}" if snippet else title)
         return "\n".join(lines) or None
+    except Exception:
+        return None
+
+
+def duckduckgo_answer(
+    query: str,
+    timeout: float = 5.0,
+    opener: Optional[Callable] = None,
+) -> str | None:
+    """Return a short instant answer for a query, or None on any failure.
+
+    Uses DuckDuckGo's JSON API (no key, no HTML scraping). Coverage is
+    narrower than a full search, but the call is cheap and fails soft.
+    """
+    if not query or not query.strip():
+        return None
+
+    params = urllib.parse.urlencode(
+        {
+            "q": query.strip(),
+            "format": "json",
+            "no_html": "1",
+            "skip_disambig": "1",
+        }
+    )
+    request = urllib.request.Request(
+        f"{_DDG_URL}?{params}",
+        headers={"User-Agent": _USER_AGENT},
+    )
+    fetch = opener or urllib.request.urlopen
+
+    try:
+        with fetch(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        direct = str(payload.get("Answer") or "").strip()
+        if direct:
+            text = direct
+        else:
+            abstract = str(payload.get("AbstractText") or "").strip()
+            if not abstract:
+                return None
+            source = str(payload.get("AbstractSource") or "").strip()
+            text = f"[{source}] {abstract}" if source else abstract
+        text = " ".join(text.split())
+        if len(text) > _MAX_CHARS:
+            text = text[:_MAX_CHARS].rsplit(" ", 1)[0] + "…"
+        return text
     except Exception:
         return None
