@@ -189,6 +189,13 @@ class JarvisOrchestrator:
                 tools = getattr(self, "tools", None)
                 if tools is not None and tools.names():
                     request_kwargs["tools"] = tools.schemas()
+                    messages[0]["content"] += (
+                        "\n\nUse your tools when they fit: remember_fact when the user states "
+                        "something to remember, recall_facts when they ask what you know about "
+                        "them, get_time/get_date for clock questions, open_target/search_web for "
+                        "actions, and request_shutdown only when they clearly want to exit. "
+                        "Prefer a tool over guessing."
+                    )
 
                 response = await client.chat.completions.create(**request_kwargs)
 

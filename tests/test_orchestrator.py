@@ -137,6 +137,7 @@ def test_ai_fallback_sends_tool_schemas_when_registry_present(monkeypatch):
     asyncio.run(orchestrator._ai_fallback("Hello"))
 
     assert create.call_args.kwargs["tools"] == registry.schemas()
+    assert "Use your tools when they fit" in create.call_args.kwargs["messages"][0]["content"]
 
 
 def test_ai_fallback_does_not_send_tools_when_no_registry(monkeypatch):
@@ -146,6 +147,7 @@ def test_ai_fallback_does_not_send_tools_when_no_registry(monkeypatch):
     asyncio.run(orchestrator._ai_fallback("Hello"))
 
     assert "tools" not in create.call_args.kwargs
+    assert "Use your tools when they fit" not in create.call_args.kwargs["messages"][0]["content"]
 
 
 def test_ai_fallback_executes_tool_call_then_returns_final_answer(monkeypatch):
