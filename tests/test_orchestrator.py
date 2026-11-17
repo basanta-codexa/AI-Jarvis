@@ -8,6 +8,7 @@ import ai_jarvis.core.orchestrator as orchestrator_module
 from ai_jarvis.config import settings
 from ai_jarvis.core.orchestrator import JarvisOrchestrator
 from ai_jarvis.skills.base import SkillResult
+from ai_jarvis.core.tools import ToolRegistry, ToolSpec
 
 
 @pytest.fixture(autouse=True)
@@ -124,6 +125,73 @@ def test_ai_fallback_grounds_answer_in_relevant_memories(monkeypatch):
     assert "What you know about the user" in system_prompt
     assert "- My favourite tea is jasmine." in system_prompt
     orchestrator.memory.recall.assert_called_once_with("What tea do I like?", n=3)
+
+
+def test_ai_fallback_sends_tool_schemas_when_registry_present(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    registry = ToolRegistry()
+    registry.register(ToolSpec("get_time", "Get the time.", {}, lambda: "now"))
+    orchestrator = make_orchestrator()
+    orchestrator.tools = registry
+
+    asyncio.run(orchestrator._ai_fallback("Hello"))
+
+    assert create.call_args.kwargs["tools"] == registry.schemas()
+
+
+def test_ai_fallback_does_not_send_tools_when_no_registry(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    orchestrator = make_orchestrator()  # __new__ — no tools attribute
+
+    asyncio.run(orchestrator._ai_fallback("Hello"))
+
+    assert "tools" not in create.call_args.kwargs
+
+
+def test_ai_fallback_executes_tool_call_then_returns_final_answer(monkeypatch):
+    first = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+        content=None,
+        tool_calls=[SimpleNamespace(
+            id="call_1",
+            function=SimpleNamespace(name="remember_fact", arguments='{"fact": "I like tea"}'),
+        )],
+    ))])
+    final = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+        content="Noted, I'll remember that.", tool_calls=None,
+    ))])
+    calls = []
+
+    async def create_response(**kwargs):
+        calls.append(kwargs)
+        return first if len(calls) == 1 else final
+
+    async def close_client():
+        pass
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create_response)),
+        close=close_client,
+    )
+    monkeypatch.setattr(orchestrator_module, "AsyncOpenAI", Mock(return_value=client))
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-key")
+
+    registry = ToolRegistry()
+    handler = Mock(return_value="Locked into memory: I like tea")
+    registry.register(ToolSpec("remember_fact", "Save a fact.", {}, handler))
+    orchestrator = make_orchestrator()
+    orchestrator.tools = registry
+
+    answer = asyncio.run(orchestrator._ai_fallback("Remember that I like tea"))
+
+    assert answer == "Noted, I'll remember that."
+    assert len(calls) == 2
+    handler.assert_called_once_with(fact="I like tea")
+    second_messages = calls[1]["messages"]
+    assert any(
+        m.get("role") == "tool" and m.get("content") == "Locked into memory: I like tea"
+        for m in second_messages
+    )
+    assert any(m.get("role") == "assistant" and m.get("tool_calls") for m in second_messages)
 
 
 def test_ai_fallback_adds_wikipedia_reference_for_lookup_questions(monkeypatch):

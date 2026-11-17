@@ -5,6 +5,7 @@ This is the brain of JARVIS.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from openai import APIError, AsyncOpenAI
 from ai_jarvis.core.plugin_manager import PluginManager
 from ai_jarvis.core.memory import MemorySystem
 from ai_jarvis.core.lookup import wikipedia_summary
+from ai_jarvis.core.tools import ToolRegistry, build_default_registry
 from ai_jarvis.voice.tts import TTS
 from ai_jarvis.voice.stt import STT
 from ai_jarvis.config import settings
@@ -42,6 +44,9 @@ class JarvisOrchestrator:
 
         # Load all skills
         self.plugins.load_skills()
+
+        # Capabilities the AI is allowed to invoke
+        self.tools = build_default_registry(self)
 
         # Wake word state
         self._listening = False
@@ -175,12 +180,53 @@ class JarvisOrchestrator:
                     messages.append({"role": role, "content": msg["content"]})
                 messages.append({"role": "user", "content": text})
 
-                response = await client.chat.completions.create(
-                    model=settings.AI_MODEL,
-                    messages=messages,
-                    max_tokens=settings.AI_MAX_TOKENS,
-                    temperature=settings.AI_TEMPERATURE,
+                request_kwargs = {
+                    "model": settings.AI_MODEL,
+                    "messages": messages,
+                    "max_tokens": settings.AI_MAX_TOKENS,
+                    "temperature": settings.AI_TEMPERATURE,
+                }
+                tools = getattr(self, "tools", None)
+                if tools is not None and tools.names():
+                    request_kwargs["tools"] = tools.schemas()
+
+                response = await client.chat.completions.create(**request_kwargs)
+
+                # One tool round trip: the model may ask to use a capability.
+                # Anything after that is ignored so a bad model cannot loop.
+                tool_calls = (
+                    getattr(response.choices[0].message, "tool_calls", None)
+                    if response.choices else None
                 )
+                if tool_calls and tools is not None:
+                    called = response.choices[0].message
+                    messages.append({
+                        "role": "assistant",
+                        "content": called.content or "",
+                        "tool_calls": [
+                            {
+                                "id": call.id,
+                                "type": "function",
+                                "function": {
+                                    "name": call.function.name,
+                                    "arguments": call.function.arguments,
+                                },
+                            }
+                            for call in tool_calls
+                        ],
+                    })
+                    for call in tool_calls:
+                        try:
+                            arguments = json.loads(call.function.arguments or "{}")
+                        except (TypeError, ValueError):
+                            arguments = {}
+                        result = tools.dispatch(call.function.name, arguments)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": result,
+                        })
+                    response = await client.chat.completions.create(**request_kwargs)
             finally:
                 await client.close()
 
