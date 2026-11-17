@@ -14,6 +14,7 @@ def make_orchestrator(skill=None):
     orchestrator.memory = SimpleNamespace(
         add_message=Mock(),
         get_recent=Mock(return_value=[]),
+        recall=Mock(return_value=[]),
     )
     orchestrator.tts = SimpleNamespace(speak=Mock())
     orchestrator.plugins = SimpleNamespace(
@@ -79,6 +80,62 @@ def test_process_ignores_empty_input():
     orchestrator.memory.add_message.assert_not_called()
     orchestrator.tts.speak.assert_not_called()
     orchestrator.on_message.assert_not_called()
+
+
+def _patch_async_client(monkeypatch, content="An answer."):
+    """Install a fake AsyncOpenAI that records the request kwargs."""
+    request = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+    )
+    create = Mock()
+
+    async def create_response(**kwargs):
+        create(**kwargs)
+        return request
+
+    async def close_client():
+        pass
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create_response)),
+        close=close_client,
+    )
+    monkeypatch.setattr(orchestrator_module, "AsyncOpenAI", Mock(return_value=client))
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-key")
+    return create
+
+
+def test_ai_fallback_grounds_answer_in_relevant_memories(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    orchestrator = make_orchestrator()
+    orchestrator.memory.recall.return_value = ["My favourite tea is jasmine."]
+
+    asyncio.run(orchestrator._ai_fallback("What tea do I like?"))
+
+    system_prompt = create.call_args.kwargs["messages"][0]["content"]
+    assert "What you know about the user" in system_prompt
+    assert "- My favourite tea is jasmine." in system_prompt
+    orchestrator.memory.recall.assert_called_once_with("What tea do I like?", n=3)
+
+
+def test_ai_fallback_ignores_empty_memory_results(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    orchestrator = make_orchestrator()
+    orchestrator.memory.recall.return_value = ["No relevant memories found."]
+
+    asyncio.run(orchestrator._ai_fallback("Hello"))
+
+    system_prompt = create.call_args.kwargs["messages"][0]["content"]
+    assert "What you know about the user" not in system_prompt
+
+
+def test_ai_fallback_survives_memory_failure(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    orchestrator = make_orchestrator()
+    orchestrator.memory.recall.side_effect = RuntimeError("vector store locked")
+
+    assert asyncio.run(orchestrator._ai_fallback("Hello")) == "An answer."
+    assert create.called
 
 
 def test_ai_fallback_uses_async_client_and_deduplicates_current_message(monkeypatch):

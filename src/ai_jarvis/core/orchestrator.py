@@ -81,6 +81,26 @@ class JarvisOrchestrator:
 
         return response
 
+    def _recall_for_prompt(self, text: str, limit: int = 3) -> list[str]:
+        """Ground answers in what JARVIS already remembers.
+
+        Memory is an enhancement, never a hard dependency: a failure or an
+        empty result simply means no context is added.
+        """
+        try:
+            recalled = self.memory.recall(text, n=limit) or []
+        except Exception:
+            return []
+        cleaned = []
+        for item in recalled:
+            if not isinstance(item, str):
+                continue
+            item = item.strip()
+            if not item or item == "No relevant memories found.":
+                continue
+            cleaned.append(item)
+        return cleaned[:limit]
+
     async def _ai_fallback(self, text: str) -> str:
         """AI-powered response for open-ended questions."""
         if not settings.OPENAI_API_KEY:
@@ -107,16 +127,18 @@ class JarvisOrchestrator:
                 ):
                     history = history[:-1]
 
-                messages = [
-                    {
-                        "role": "system",
-                        "content": (
-                            f"You are {settings.JARVIS_NAME}, a helpful, witty, intelligent personal AI "
-                            f"assistant inspired by Iron Man's J.A.R.V.I.S. You are talking with {settings.USER_NAME}. "
-                            "Keep responses concise, helpful, and slightly formal."
-                        ),
-                    }
-                ]
+                system_prompt = (
+                    f"You are {settings.JARVIS_NAME}, a helpful, witty, intelligent personal AI "
+                    f"assistant inspired by Iron Man's J.A.R.V.I.S. You are talking with {settings.USER_NAME}. "
+                    "Keep responses concise, helpful, and slightly formal."
+                )
+                memories = self._recall_for_prompt(text)
+                if memories:
+                    system_prompt += (
+                        "\n\nWhat you know about the user (use it when relevant):\n"
+                        + "\n".join(f"- {m}" for m in memories)
+                    )
+                messages = [{"role": "system", "content": system_prompt}]
                 for msg in history:
                     role = (
                         "assistant" if msg.get("role") == "jarvis"
