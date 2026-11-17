@@ -13,8 +13,14 @@ def test_status_line_reports_online_ai_and_available_subsystems():
     assert status_line(make_status("online", "online", "online")) == "Online · mic ready · memory on"
 
 
-def test_status_line_reports_configured_ai_as_online():
-    assert status_line(make_status("configured")).startswith("Online")
+def test_status_line_marks_configured_ai_as_unverified():
+    line = status_line(make_status("configured"))
+    assert line.startswith("Key set (unverified)")
+    assert not line.startswith("Online")
+
+
+def test_status_line_reports_verified_online_ai():
+    assert status_line(make_status("online")).startswith("Online")
 
 
 def test_status_line_reports_offline_when_provider_unavailable():

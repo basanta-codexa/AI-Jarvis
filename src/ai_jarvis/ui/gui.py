@@ -35,7 +35,10 @@ PULSE_MS = 33           # ~30 fps pulse animation
 def status_line(status: dict) -> str:
     """One honest status line from orchestrator.get_status(). No invented numbers."""
     ai = status.get("ai", "offline")
-    base = {"online": "Online", "configured": "Online"}.get(ai, "Offline mode")
+    base = {
+        "online": "Online",
+        "configured": "Key set (unverified)",
+    }.get(ai, "Offline mode")
     mic = "mic ready" if status.get("stt") == "online" else "no mic"
     memory = "memory on" if status.get("memory", {}).get("vector_memory") == "online" else "memory basic"
     return f"{base} · {mic} · {memory}"
@@ -302,7 +305,7 @@ class JarvisGUI:
             return
         self.status_var.set(status_line(status))
         self.status_dot.configure(
-            text_color=COLOR_SUCCESS if status.get("ai") in ("online", "configured") else COLOR_WARNING,
+            text_color=COLOR_SUCCESS if status.get("ai") == "online" else COLOR_WARNING,
         )
 
     # ─────────────────────────────────────────────────────────────
