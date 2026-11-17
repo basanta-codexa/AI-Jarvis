@@ -16,6 +16,7 @@ def no_wikipedia_network(monkeypatch):
     """No test may make a real network request; override per test if needed."""
     monkeypatch.setattr(orchestrator_module, "wikipedia_summary", lambda query: None)
     monkeypatch.setattr(orchestrator_module, "wikipedia_search", lambda query, limit=3: None)
+    monkeypatch.setattr(orchestrator_module, "duckduckgo_answer", lambda query: None)
 
 
 def make_orchestrator(skill=None):
@@ -233,6 +234,25 @@ def test_ai_fallback_uses_wikipedia_search_when_no_exact_article(monkeypatch):
     system_prompt = create.call_args.kwargs["messages"][0]["content"]
     assert "Related Wikipedia articles about quantum computing" in system_prompt
     assert "Uses qubits." in system_prompt
+
+
+def test_ai_fallback_uses_duckduckgo_as_final_lookup_fallback(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    looked_up = []
+    monkeypatch.setattr(orchestrator_module, "wikipedia_summary", lambda query: None)
+    monkeypatch.setattr(orchestrator_module, "wikipedia_search", lambda query, limit=3: None)
+    monkeypatch.setattr(
+        orchestrator_module,
+        "duckduckgo_answer",
+        lambda query: looked_up.append(query) or "42",
+    )
+    orchestrator = make_orchestrator()
+
+    asyncio.run(orchestrator._ai_fallback("What is the answer?"))
+
+    assert looked_up == ["the answer"]
+    system_prompt = create.call_args.kwargs["messages"][0]["content"]
+    assert "Quick answer about the answer: 42" in system_prompt
 
 
 def test_ai_fallback_skips_lookup_for_non_lookup_questions(monkeypatch):

@@ -13,7 +13,7 @@ from openai import APIError, AsyncOpenAI
 
 from ai_jarvis.core.plugin_manager import PluginManager
 from ai_jarvis.core.memory import MemorySystem
-from ai_jarvis.core.lookup import wikipedia_search, wikipedia_summary
+from ai_jarvis.core.lookup import duckduckgo_answer, wikipedia_search, wikipedia_summary
 from ai_jarvis.core.tools import ToolRegistry, build_default_registry
 from ai_jarvis.voice.tts import TTS
 from ai_jarvis.voice.stt import STT
@@ -127,6 +127,9 @@ class JarvisOrchestrator:
         results = await asyncio.to_thread(wikipedia_search, subject, 3)
         if results:
             return f"Related Wikipedia articles about {subject}:\n{results}"
+        answer = await asyncio.to_thread(duckduckgo_answer, subject)
+        if answer:
+            return f"Quick answer about {subject}: {answer}"
         return None
 
     async def _ai_fallback(self, text: str) -> str:
