@@ -5,12 +5,14 @@ This is the brain of JARVIS.
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 from openai import APIError, AsyncOpenAI
 
 from ai_jarvis.core.plugin_manager import PluginManager
 from ai_jarvis.core.memory import MemorySystem
+from ai_jarvis.core.lookup import wikipedia_summary
 from ai_jarvis.voice.tts import TTS
 from ai_jarvis.voice.stt import STT
 from ai_jarvis.config import settings
@@ -18,6 +20,11 @@ from ai_jarvis.config import settings
 
 class JarvisOrchestrator:
     """Main agent controller — the brain of JARVIS."""
+
+    _LOOKUP_RE = re.compile(
+        r"^\s*(?:what is|what's|who is|who's|define|tell me about|explain)\s+(.+?)\??\s*$",
+        re.IGNORECASE,
+    )
 
     def __init__(self, on_message=None, data_dir: str | Path = None):
         if data_dir is None:
@@ -101,6 +108,19 @@ class JarvisOrchestrator:
             cleaned.append(item)
         return cleaned[:limit]
 
+    async def _lookup_for_prompt(self, text: str) -> str | None:
+        """Fetch a short reference for lookup-style questions, if any."""
+        match = self._LOOKUP_RE.match(text)
+        if not match:
+            return None
+        subject = match.group(1).strip().strip("?.").strip()
+        if not subject:
+            return None
+        summary = await asyncio.to_thread(wikipedia_summary, subject)
+        if not summary:
+            return None
+        return f"Reference about {subject}: {summary}"
+
     async def _ai_fallback(self, text: str) -> str:
         """AI-powered response for open-ended questions."""
         if not settings.OPENAI_API_KEY:
@@ -140,6 +160,11 @@ class JarvisOrchestrator:
                     system_prompt += (
                         "\n\nWhat you know about the user (use it when relevant):\n"
                         + "\n".join(f"- {m}" for m in memories)
+                    )
+                reference = await self._lookup_for_prompt(text)
+                if reference:
+                    system_prompt += (
+                        "\n\nVerified reference (use it when relevant):\n- " + reference
                     )
                 messages = [{"role": "system", "content": system_prompt}]
                 for msg in history:

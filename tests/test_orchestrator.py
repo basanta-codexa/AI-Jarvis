@@ -2,10 +2,18 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 import ai_jarvis.core.orchestrator as orchestrator_module
 from ai_jarvis.config import settings
 from ai_jarvis.core.orchestrator import JarvisOrchestrator
 from ai_jarvis.skills.base import SkillResult
+
+
+@pytest.fixture(autouse=True)
+def no_wikipedia_network(monkeypatch):
+    """No test may make a real network request; override per test if needed."""
+    monkeypatch.setattr(orchestrator_module, "wikipedia_summary", lambda query: None)
 
 
 def make_orchestrator(skill=None):
@@ -116,6 +124,40 @@ def test_ai_fallback_grounds_answer_in_relevant_memories(monkeypatch):
     assert "What you know about the user" in system_prompt
     assert "- My favourite tea is jasmine." in system_prompt
     orchestrator.memory.recall.assert_called_once_with("What tea do I like?", n=3)
+
+
+def test_ai_fallback_adds_wikipedia_reference_for_lookup_questions(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    looked_up = []
+    monkeypatch.setattr(
+        orchestrator_module,
+        "wikipedia_summary",
+        lambda query: looked_up.append(query) or "Python is a programming language.",
+    )
+    orchestrator = make_orchestrator()
+
+    asyncio.run(orchestrator._ai_fallback("What is Python?"))
+
+    assert looked_up == ["Python"]
+    system_prompt = create.call_args.kwargs["messages"][0]["content"]
+    assert "Verified reference" in system_prompt
+    assert "Python is a programming language." in system_prompt
+
+
+def test_ai_fallback_skips_lookup_for_non_lookup_questions(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    looked_up = []
+    monkeypatch.setattr(
+        orchestrator_module,
+        "wikipedia_summary",
+        lambda query: looked_up.append(query) or "should not be used",
+    )
+    orchestrator = make_orchestrator()
+
+    asyncio.run(orchestrator._ai_fallback("How can I stay productive?"))
+
+    assert looked_up == []
+    assert "Verified reference" not in create.call_args.kwargs["messages"][0]["content"]
 
 
 def test_ai_fallback_includes_current_local_datetime(monkeypatch):
