@@ -82,7 +82,6 @@ TTS_VOLUME = 1.0        # 0.0 – 1.0
 TTS_VOICE_INDEX = 1     # System dependent
 STT_TIMEOUT = 5         # seconds to wait for speech
 STT_PHRASE_LIMIT = 10   # max seconds per phrase
-WAKE_WORD = "hey jarvis"
 
 # ═════════════════════════════════════════════════════════════════════
 #  MEMORY
@@ -138,6 +137,5 @@ APPROVED_WEBSITES = {
 #  SYSTEM
 # ═════════════════════════════════════════════════════════════════════
 ENABLE_SYSTEM_INFO = True
-ENABLE_WAKE_WORD = True
 ENABLE_VECTOR_MEMORY = True
 LOG_LEVEL = "INFO"

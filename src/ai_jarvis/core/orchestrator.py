@@ -50,9 +50,7 @@ class JarvisOrchestrator:
         # Capabilities the AI is allowed to invoke
         self.tools = build_default_registry(self)
 
-        # Wake word state
         self._listening = False
-        self._wake_word_enabled = True
         self.request_shutdown = False     # set by the exit skill; host apps poll it
         self._ai_provider_status = (
             "configured" if settings.OPENAI_API_KEY else "offline"
@@ -320,15 +318,6 @@ class JarvisOrchestrator:
         """Synchronous wrapper for process (for GUI callbacks)."""
         return asyncio.run(self.process(text))
 
-    def start_wake_word(self):
-        """Enable always-on wake word listening."""
-        self._wake_word_enabled = True
-        self.on_message("system", "Wake word enabled. Say 'Hey JARVIS' to activate.")
-
-    def stop_wake_word(self):
-        self._wake_word_enabled = False
-        self.on_message("system", "Wake word disabled.")
-
     def get_status(self) -> dict:
         """Get system status for UI display."""
         return {
@@ -340,7 +329,6 @@ class JarvisOrchestrator:
             ),
             "tts": "online" if self.tts.is_available else "offline",
             "stt": "online" if self.stt.is_available else "offline",
-            "wake_word": self._wake_word_enabled,
         }
 
     def shutdown(self):

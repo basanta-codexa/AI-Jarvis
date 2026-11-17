@@ -432,7 +432,6 @@ def test_ai_fallback_reports_unconfigured_provider(monkeypatch):
 def test_get_status_reports_actual_subsystem_availability():
     orchestrator = make_orchestrator()
     orchestrator._ai_provider_status = "fallback"
-    orchestrator._wake_word_enabled = True
     orchestrator.plugins.skills = {"system": object()}
     orchestrator.memory.get_stats = Mock(
         return_value={"total_messages": 5, "vector_memory": "offline"}
@@ -448,5 +447,4 @@ def test_get_status_reports_actual_subsystem_availability():
         "ai": "fallback",
         "tts": "offline",
         "stt": "online",
-        "wake_word": True,
     }
