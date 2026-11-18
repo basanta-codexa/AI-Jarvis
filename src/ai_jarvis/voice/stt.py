@@ -31,7 +31,9 @@ SAMPLE_RATE = 16000          # Hz — what Google Web Speech expects
 BLOCK = 480                  # frames per read (30 ms at 16 kHz)
 CALIBRATION_BLOCKS = 20      # ~0.6s of ambient noise
 SILENCE_SECONDS = 0.8        # pause that ends a phrase
-NOISE_MULTIPLIER = 2.0       # speech must exceed this × room noise (was 3.0)
+NOISE_MULTIPLIER = 1.6       # speech must exceed this × room noise
+NOISE_FLOOR = 120.0          # low enough that quiet speech still registers
+ONSET_BLOCKS = 2             # consecutive loud blocks before recording starts
 MIN_PHRASE_SECONDS = 0.3     # shorter captures are treated as accidental clicks
 
 
@@ -87,7 +89,7 @@ class STT:
             with sd.InputStream(
                 samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=BLOCK,
             ) as stream:
-                threshold = self._calibrate(stream)
+                threshold = self._calibrate(stream, force=True)
                 frames = self._capture_phrase(stream, threshold)
         except Exception as e:
             self._cached_threshold = None              # recalibrate next time
@@ -113,14 +115,19 @@ class STT:
         except Exception:
             pass
 
-    def _calibrate(self, stream) -> float:
-        """Measure the room once and reuse it for the next listens."""
-        if self._cached_threshold is not None:
+    def _calibrate(self, stream, force: bool = False) -> float:
+        """Measure the current room noise before each listen.
+
+        A stale threshold is the usual cause of "I have to shout" / "it fires
+        too early", so calibration is refreshed every time unless a cached
+        value is explicitly reused.
+        """
+        if self._cached_threshold is not None and not force:
             return self._cached_threshold
         noise = [
             _rms(stream.read(BLOCK)[0]) for _ in range(CALIBRATION_BLOCKS)
         ]
-        self._cached_threshold = max(350.0, float(np.median(noise)) * NOISE_MULTIPLIER)
+        self._cached_threshold = max(NOISE_FLOOR, float(np.median(noise)) * NOISE_MULTIPLIER)
         return self._cached_threshold
 
     def _capture_phrase(self, stream, threshold: float) -> list[np.ndarray]:
@@ -128,6 +135,7 @@ class STT:
         frames: list[np.ndarray] = []
         waited = 0.0
         speaking = False
+        onset = 0
         silence = 0.0
         recorded = 0.0
 
@@ -138,7 +146,10 @@ class STT:
             self._emit_level(volume)
 
             if not speaking:
-                if volume >= threshold:
+                # Require sustained loudness so a single noise spike cannot
+                # start recording ("fires too early").
+                onset = onset + 1 if volume >= threshold else 0
+                if onset >= ONSET_BLOCKS:
                     speaking = True
                     frames.append(block)
                     recorded += now_delta

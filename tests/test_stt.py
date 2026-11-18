@@ -68,6 +68,22 @@ def test_capture_fires_speech_start_and_volume():
     assert any(call.args[0] > 0.5 for call in instance.on_volume.call_args_list)
 
 
+def test_capture_ignores_single_noise_spike_before_speech():
+    instance = make_stt_instance()
+    # One loud block surrounded by silence must NOT start recording.
+    blocks = [0] * 5 + [2000] + [0] * 60
+    frames = instance._capture_phrase(FakeStream(blocks), 1000.0)
+    assert frames == []
+    instance.on_speech_start.assert_not_called()
+
+
+def test_calibration_is_refreshed_when_forced():
+    instance = make_stt_instance()
+    instance._cached_threshold = 9999.0
+    stream = FakeStream([100] * 20)
+    assert instance._calibrate(stream, force=True) != 9999.0
+
+
 def test_capture_waits_for_speech_and_gives_up_quietly(monkeypatch):
     monkeypatch.setattr(stt, "STT_TIMEOUT", 0.15)   # shrink the wait — no real-time delay
     instance = make_stt_instance()
