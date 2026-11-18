@@ -3,7 +3,9 @@ import json
 import urllib.error
 from contextlib import nullcontext
 
-from ai_jarvis.core.lookup import duckduckgo_answer, wikipedia_search, wikipedia_summary
+from ai_jarvis.core.lookup import (
+    duckduckgo_answer, web_results, wikipedia_search, wikipedia_summary,
+)
 
 
 def fake_opener(payload, recorder=None):
@@ -134,6 +136,41 @@ def test_duckduckgo_answer_falls_back_to_abstract_with_source():
     opener = fake_opener({"AbstractText": "A short explanation.", "AbstractSource": "Wikipedia"})
 
     assert duckduckgo_answer("anything", opener=opener) == "[Wikipedia] A short explanation."
+
+
+RSS = b"""<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"><channel><title>Bing: test</title>
+<item><title>Result One</title><description>A  B snippet.</description></item>
+<item><title>Result Two</title><description>Second &amp; final.</description></item>
+</channel></rss>"""
+
+
+def test_web_results_parses_rss_titles_and_snippets():
+    seen = []
+    opener = fake_opener(RSS, recorder=seen)
+
+    result = web_results("ipl 2025 final", opener=opener)
+
+    assert result.splitlines()[0] == "Result One: A B snippet."
+    assert "Result Two: Second & final." in result
+    assert "q=ipl+2025+final" in seen[0][0].full_url
+    assert "format=rss" in seen[0][0].full_url
+
+
+def test_web_results_respects_limit():
+    result = web_results("anything", limit=1, opener=fake_opener(RSS))
+    assert len(result.splitlines()) == 1
+
+
+def test_web_results_returns_none_for_empty_or_broken():
+    assert web_results("  ", opener=fake_opener(RSS)) is None
+    broken_xml = fake_opener(b"<html>not xml</html>")
+    assert web_results("x", opener=broken_xml) is None
+
+    def broken(request, timeout=None):
+        raise OSError("offline")
+
+    assert web_results("x", opener=broken) is None
 
 
 def test_duckduckgo_answer_returns_none_for_empty_or_broken():

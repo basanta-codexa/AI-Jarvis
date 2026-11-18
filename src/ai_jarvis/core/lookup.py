@@ -10,10 +10,12 @@ import json
 import re
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from typing import Callable, Optional
 
 _API_URL = "https://en.wikipedia.org/w/api.php"
 _DDG_URL = "https://api.duckduckgo.com/"
+_BING_RSS_URL = "https://www.bing.com/search"
 _USER_AGENT = "AI-JARVIS/2.0 (personal assistant; contact: local user)"
 _MAX_CHARS = 600
 
@@ -155,5 +157,44 @@ def duckduckgo_answer(
         if len(text) > _MAX_CHARS:
             text = text[:_MAX_CHARS].rsplit(" ", 1)[0] + "…"
         return text
+    except Exception:
+        return None
+
+
+def web_results(
+    query: str,
+    limit: int = 3,
+    timeout: float = 5.0,
+    opener: Optional[Callable] = None,
+) -> str | None:
+    """Return top web results (title + snippet) from Bing's RSS feed.
+
+    Key-free and XML-based, so no HTML scraping is involved. Suitable for
+    current events that Wikipedia/DDG instant answers do not cover.
+    Fail-soft: returns None on any problem.
+    """
+    if not query or not query.strip():
+        return None
+
+    params = urllib.parse.urlencode({"q": query.strip(), "format": "rss"})
+    request = urllib.request.Request(
+        f"{_BING_RSS_URL}?{params}",
+        headers={"User-Agent": _USER_AGENT},
+    )
+    fetch = opener or urllib.request.urlopen
+
+    try:
+        with fetch(request, timeout=timeout) as response:
+            root = ET.fromstring(response.read())
+        lines = []
+        for item in root.findall("./channel/item")[:limit]:
+            title = (item.findtext("title") or "").strip()
+            if not title:
+                continue
+            snippet = " ".join((item.findtext("description") or "").split())
+            if len(snippet) > 240:
+                snippet = snippet[:240].rsplit(" ", 1)[0] + "…"
+            lines.append(f"{title}: {snippet}" if snippet else title)
+        return "\n".join(lines) or None
     except Exception:
         return None
