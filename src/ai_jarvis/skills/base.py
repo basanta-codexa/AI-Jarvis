@@ -62,12 +62,19 @@ class BaseSkill(ABC):
         ...
 
     def match(self, text: str) -> Optional[SkillCommand]:
-        """Check if this skill can handle the given text."""
+        """Return the most specific matching command, or None.
+
+        Registration order must not decide routing: a generic pattern should
+        never shadow a more specific one in the same skill.
+        """
         lower = text.lower().strip()
-        for cmd in self.commands:
-            if re.search(cmd.pattern, lower, re.IGNORECASE):
-                return cmd
-        return None
+        matches = [
+            cmd for cmd in self.commands
+            if re.search(cmd.pattern, lower, re.IGNORECASE)
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda cmd: len(cmd.pattern))
 
     async def execute(self, command: SkillCommand, text: str) -> SkillResult:
         """Execute a matched command."""

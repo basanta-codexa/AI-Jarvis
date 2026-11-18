@@ -36,6 +36,20 @@ def test_skill_matching_is_case_insensitive():
     assert skill.match("goodbye") is None
 
 
+def test_skill_match_prefers_longest_pattern_over_registration_order():
+    skill = ExampleSkill(orchestrator=None)
+    skill.setup()
+    skill.register_command(
+        r"\bhello jarvis\b",
+        lambda text: SkillResult(success=True, response="specific"),
+        "Specific greeting",
+    )
+
+    command = skill.match("hello jarvis")
+
+    assert command.description == "Specific greeting"
+
+
 def test_skill_execution_returns_handler_result():
     skill = ExampleSkill(orchestrator=None)
     skill.setup()
