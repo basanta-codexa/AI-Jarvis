@@ -9,6 +9,27 @@ from dotenv import load_dotenv
 # Load .env from project root
 load_dotenv(Path(__file__).resolve().parent.parent.parent.parent / ".env")
 
+
+def _env_number(name: str, default, cast, *, minimum=None, maximum=None):
+    """Read a numeric setting, falling back to *default* on bad input.
+
+    A typo in .env must never crash the app at import time.
+    """
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        value = cast(raw)
+    except (TypeError, ValueError):
+        print(f"[Settings] Invalid {name}={raw!r}; using {default}")
+        return default
+    if (minimum is not None and value < minimum) or (
+        maximum is not None and value > maximum
+    ):
+        print(f"[Settings] {name}={value} out of range; using {default}")
+        return default
+    return value
+
 # ═════════════════════════════════════════════════════════════════════
 #  IDENTITY
 # ═════════════════════════════════════════════════════════════════════
@@ -20,7 +41,11 @@ FULL_NAME = "Just A Rather Very Intelligent System"
 #  AI / LLM PROVIDERS (OpenAI, OpenRouter, Grok, or Groq)
 # ═════════════════════════════════════════════════════════════════════
 # Provider: "openai", "openrouter", "grok", or "groq"
-AI_PROVIDER = os.getenv("AI_PROVIDER", "openai")
+_VALID_PROVIDERS = ("openai", "openrouter", "grok", "groq")
+_raw_provider = os.getenv("AI_PROVIDER", "openai").strip().lower()
+AI_PROVIDER = _raw_provider if _raw_provider in _VALID_PROVIDERS else "openai"
+if AI_PROVIDER != _raw_provider:
+    print(f"[Settings] Unknown AI_PROVIDER={_raw_provider!r}; using 'openai'")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
@@ -41,10 +66,10 @@ else:
     OPENAI_BASE_URL = OPENAI_BASE_URL_OPENAI
 
 AI_MODEL = os.getenv("AI_MODEL", "gpt-3.5-turbo")
-AI_TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.7"))
-AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "600"))
-AI_REQUEST_TIMEOUT = float(os.getenv("AI_REQUEST_TIMEOUT", "30"))
-AI_MAX_RETRIES = int(os.getenv("AI_MAX_RETRIES", "1"))
+AI_TEMPERATURE = _env_number("AI_TEMPERATURE", 0.7, float, minimum=0.0, maximum=2.0)
+AI_MAX_TOKENS = _env_number("AI_MAX_TOKENS", 600, int, minimum=1)
+AI_REQUEST_TIMEOUT = _env_number("AI_REQUEST_TIMEOUT", 30.0, float, minimum=1.0)
+AI_MAX_RETRIES = _env_number("AI_MAX_RETRIES", 1, int, minimum=0)
 
 # ═════════════════════════════════════════════════════════════════════
 #  CINEMATIC COLOR PALETTE (Iron Man / Holographic)
