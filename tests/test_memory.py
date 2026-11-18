@@ -21,6 +21,11 @@ def test_conversation_history_persists_and_is_capped(monkeypatch, tmp_path):
     assert json.loads(memory.history_file.read_text(encoding="utf-8")) == (
         memory.get_all_history()
     )
+    # Rotated-out messages are preserved, not silently erased.
+    archived = json.loads(memory.archive_file.read_text(encoding="utf-8"))
+    assert len(archived) == 5
+    assert archived[0]["content"] == "message 0"
+    assert archived[-1]["content"] == "message 4"
 
 
 def test_fallback_memory_can_recall_and_forget(monkeypatch, tmp_path):
@@ -34,6 +39,18 @@ def test_fallback_memory_can_recall_and_forget(monkeypatch, tmp_path):
     memory.forget_all()
 
     assert memory.recall("jasmine") == ["No relevant memories found."]
+    assert memory.get_all_history() == []
+
+
+def test_forget_all_also_removes_archive(monkeypatch, tmp_path):
+    memory = make_memory(monkeypatch, tmp_path)
+    for index in range(502):
+        memory.add_message("user", f"message {index}")
+    assert memory.archive_file.exists()
+
+    memory.forget_all()
+
+    assert not memory.archive_file.exists()
     assert memory.get_all_history() == []
 
 

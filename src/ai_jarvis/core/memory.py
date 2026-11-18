@@ -22,6 +22,7 @@ except ImportError:
 from ai_jarvis.config.settings import VECTOR_MEMORY_ENABLED
 
 COLLECTION_NAME = "jarvis_memory"
+MAX_HISTORY = 500
 
 # Words that carry no recall signal in a natural-language question.
 _STOPWORDS = frozenset({
@@ -47,6 +48,7 @@ class MemorySystem:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.history_file = self.data_dir / "conversation.json"
+        self.archive_file = self.data_dir / "conversation.archive.json"
         self.chroma_dir = self.data_dir / "chroma_db"
         self._history: list[dict] = self._load_history()
 
@@ -106,8 +108,31 @@ class MemorySystem:
             "timestamp": datetime.now().isoformat(),
         }
         self._history.append(entry)
-        self._history = self._history[-500:]   # Cap at 500 messages
+        if len(self._history) > MAX_HISTORY:
+            self._archive_history(self._history[:-MAX_HISTORY])
+            self._history = self._history[-MAX_HISTORY:]
         self.save_history()
+
+    def _archive_history(self, entries: list[dict]) -> None:
+        """Persist messages rotated out of the active history."""
+        archived = []
+        if self.archive_file.exists():
+            try:
+                data = json.loads(self.archive_file.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    archived = data
+            except Exception:
+                stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                corrupt = self.archive_file.with_name(
+                    f"{self.archive_file.stem}.corrupt.{stamp}.bak"
+                )
+                os.replace(self.archive_file, corrupt)
+        archived.extend(entries)
+        tmp = self.archive_file.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps(archived, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        os.replace(tmp, self.archive_file)
 
     def get_recent(self, n: int = 10) -> list[dict]:
         return self._history[-n:]
@@ -173,6 +198,8 @@ class MemorySystem:
         self._fallback_notes = []
         self._history = []
         self.save_history()
+        if self.archive_file.exists():
+            self.archive_file.unlink()
         return vector_error
 
     def get_stats(self) -> dict:
