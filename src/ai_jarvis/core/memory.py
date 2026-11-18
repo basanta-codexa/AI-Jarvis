@@ -78,8 +78,12 @@ class MemorySystem:
             data = json.loads(self.history_file.read_text(encoding="utf-8"))
             return data if isinstance(data, list) else []
         except Exception:
-            # Never silently drop history — move the corrupt file aside
-            backup = self.history_file.with_suffix(".corrupt.bak")
+            # Never silently drop history — move the corrupt file aside with a
+            # unique name so a later corruption cannot overwrite an older copy.
+            stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+            backup = self.history_file.with_name(
+                f"{self.history_file.stem}.corrupt.{stamp}.bak"
+            )
             try:
                 os.replace(self.history_file, backup)
                 print(f"[Memory] History file was corrupt; saved as {backup.name}")

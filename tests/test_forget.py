@@ -28,9 +28,24 @@ def test_corrupt_history_is_backed_up_not_erased(monkeypatch, tmp_path):
     memory = make_memory(monkeypatch, tmp_path)
 
     assert memory.get_all_history() == []
-    backup = tmp_path / "conversation.corrupt.bak"
-    assert backup.exists()
-    assert backup.read_text(encoding="utf-8") == "{ not valid json"
+    backups = list(tmp_path.glob("conversation.corrupt.*.bak"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == "{ not valid json"
+
+
+def test_repeated_corruption_keeps_both_backups(monkeypatch, tmp_path):
+    history = tmp_path / "conversation.json"
+
+    history.write_text("first corrupt copy", encoding="utf-8")
+    make_memory(monkeypatch, tmp_path)
+    history.write_text("second corrupt copy", encoding="utf-8")
+    make_memory(monkeypatch, tmp_path)
+
+    backups = list(tmp_path.glob("conversation.corrupt.*.bak"))
+    assert len(backups) == 2
+    assert {b.read_text(encoding="utf-8") for b in backups} == {
+        "first corrupt copy", "second corrupt copy",
+    }
 
 
 def test_save_history_leaves_no_tmp_file(monkeypatch, tmp_path):
