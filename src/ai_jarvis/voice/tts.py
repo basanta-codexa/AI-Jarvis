@@ -14,6 +14,17 @@ from typing import Optional
 from ai_jarvis.config.settings import TTS_RATE, TTS_VOLUME, TTS_VOICE_INDEX
 
 
+def _speech_timeout(text: str) -> float:
+    """Generous cap for one spoken sentence.
+
+    The naive words/rate estimate equals the speech duration itself, so adding
+    only a few seconds kills PowerShell mid-sentence once startup, voice
+    selection and punctuation pauses are counted. Allow 2x plus 30s.
+    """
+    words = len(text.split())
+    return max(30.0, words * 60.0 / max(TTS_RATE, 1) * 2 + 30)
+
+
 class TTS:
     """Text-to-speech with a queue-based worker thread (non-blocking)."""
 
@@ -98,10 +109,7 @@ try {{
             encoded_script = base64.b64encode(
                 ps_script.encode("utf-16le")
             ).decode("ascii")
-            timeout = max(
-                15,
-                len(text.split()) * 60 / max(TTS_RATE, 1) + 10,
-            )
+            timeout = _speech_timeout(text)
             subprocess.run(
                 [
                     "powershell", "-NoProfile", "-NonInteractive",
