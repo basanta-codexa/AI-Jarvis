@@ -13,7 +13,9 @@ from openai import APIError, AsyncOpenAI
 
 from ai_jarvis.core.plugin_manager import PluginManager
 from ai_jarvis.core.memory import MemorySystem
-from ai_jarvis.core.lookup import duckduckgo_answer, wikipedia_search, wikipedia_summary
+from ai_jarvis.core.lookup import (
+    duckduckgo_answer, web_results, wikipedia_search, wikipedia_summary,
+)
 from ai_jarvis.core.tools import ToolRegistry, build_default_registry
 from ai_jarvis.voice.tts import TTS
 from ai_jarvis.voice.stt import STT
@@ -32,7 +34,7 @@ class JarvisOrchestrator:
     # Factual yes/no and "when/why/how" questions: "did dhoni retire from ipl".
     _FACT_RE = re.compile(
         r"^\s*(?:did|does|do|is|are|was|were|has|have|can|could|will|would|"
-        r"when|where|why|how)\b\s+(.+?)\??\s*$",
+        r"when|where|why|how|latest|news|current|recent|today)\b\s+(.+?)\??\s*$",
         re.IGNORECASE,
     )
     _NON_FACT_SUBJECTS = frozenset({
@@ -141,6 +143,9 @@ class JarvisOrchestrator:
         answer = await asyncio.to_thread(duckduckgo_answer, subject)
         if answer:
             return f"Quick answer about {subject}: {answer}"
+        web = await asyncio.to_thread(web_results, subject, 3)
+        if web:
+            return f"Live web results about {subject}:\n{web}"
         return None
 
     async def _ai_fallback(self, text: str) -> str:

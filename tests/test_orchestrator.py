@@ -17,6 +17,7 @@ def no_wikipedia_network(monkeypatch):
     monkeypatch.setattr(orchestrator_module, "wikipedia_summary", lambda query: None)
     monkeypatch.setattr(orchestrator_module, "wikipedia_search", lambda query, limit=3: None)
     monkeypatch.setattr(orchestrator_module, "duckduckgo_answer", lambda query: None)
+    monkeypatch.setattr(orchestrator_module, "web_results", lambda query, limit=3: None)
 
 
 def make_orchestrator(skill=None):
@@ -307,6 +308,28 @@ def test_ai_fallback_uses_wikipedia_search_when_no_exact_article(monkeypatch):
     system_prompt = create.call_args.kwargs["messages"][0]["content"]
     assert "Related Wikipedia articles about quantum computing" in system_prompt
     assert "Uses qubits." in system_prompt
+
+
+def test_ai_fallback_uses_live_web_results_as_final_fallback(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    fetched = []
+    monkeypatch.setattr(orchestrator_module, "wikipedia_summary", lambda query: None)
+    monkeypatch.setattr(orchestrator_module, "wikipedia_search", lambda query, limit=3: None)
+    monkeypatch.setattr(orchestrator_module, "duckduckgo_answer", lambda query: None)
+    monkeypatch.setattr(
+        orchestrator_module,
+        "web_results",
+        lambda query, limit=3: fetched.append((query, limit))
+        or "Result One: A live snippet about current events.",
+    )
+    orchestrator = make_orchestrator()
+
+    asyncio.run(orchestrator._ai_fallback("latest ipl news"))
+
+    assert fetched == [("ipl news", 3)]
+    system_prompt = create.call_args.kwargs["messages"][0]["content"]
+    assert "Live web results about ipl news" in system_prompt
+    assert "A live snippet about current events." in system_prompt
 
 
 def test_ai_fallback_uses_duckduckgo_as_final_lookup_fallback(monkeypatch):
