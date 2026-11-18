@@ -57,6 +57,22 @@ def test_process_routes_skill_and_speaks_response():
     assert orchestrator.on_message.call_args_list[1].args == ("jarvis", "Done.")
 
 
+def test_process_executes_skill_named_ai_when_it_has_a_command():
+    async def execute(_command, _text):
+        return SkillResult(success=True, response="From the AI skill.")
+
+    skill = SimpleNamespace(name="ai", execute=execute)
+    orchestrator = make_orchestrator(skill)
+    orchestrator.plugins.find_skill.return_value = (
+        SimpleNamespace(pattern=r".+"), skill,
+    )
+
+    response = asyncio.run(orchestrator.process("hello"))
+
+    assert response == "From the AI skill."
+    orchestrator.tts.speak.assert_called_once_with("From the AI skill.")
+
+
 def test_process_does_not_speak_when_skill_disables_speech():
     async def execute(_command, _text):
         return SkillResult(success=False, response="The command failed.", speak=False)

@@ -71,17 +71,11 @@ class JarvisOrchestrator:
         match = self.plugins.find_skill(text)
         if match:
             cmd, skill = match
-            # Don't let AI fallback catch specific commands
-            if skill.name != "ai" or cmd.pattern.strip() != r".+":
-                result = await skill.execute(cmd, text)
-                response = result.response
-                speak = result.speak
-            else:
-                # AI fallback only if no specific skill matched
-                response = await self._ai_fallback(text)
-                speak = True
+            result = await skill.execute(cmd, text)
+            response = result.response
+            speak = result.speak
         else:
-            # 2. AI fallback
+            # No skill matched — let the AI answer.
             response = await self._ai_fallback(text)
             speak = True
 
