@@ -68,7 +68,9 @@ def test_default_registry_exposes_expected_capabilities():
 
     assert registry.names() == [
         "get_time", "get_date", "remember_fact", "recall_facts",
-        "get_system_status", "open_target", "search_web", "request_shutdown",
+        "get_system_status", "open_target", "search_web",
+        "whatsapp_open", "whatsapp_find", "whatsapp_send", "whatsapp_close",
+        "request_shutdown",
     ]
     assert all(schema["function"]["parameters"]["type"] == "object" for schema in registry.schemas())
 
@@ -93,6 +95,23 @@ def test_open_and_search_tools_delegate_to_existing_skills():
     assert registry.dispatch("search_web", {"query": "python"}) == "Searching: search for python"
     assert registry.dispatch("open_target", {"target": "   "}) == "No app or website was specified."
     assert registry.dispatch("search_web", {"query": ""}) == "No search query was provided."
+
+
+def test_whatsapp_tools_delegate_to_the_skill():
+    wa = SimpleNamespace(
+        _handle_open=lambda t: SimpleNamespace(response="Opening WhatsApp."),
+        _handle_find=lambda t: SimpleNamespace(response=f"Found via {t}"),
+        _handle_send=lambda t: SimpleNamespace(response=f"Sent via {t}"),
+        _handle_close=lambda t: SimpleNamespace(response="Closed WhatsApp."),
+    )
+    orch = make_orchestrator()
+    orch.plugins.skills["whatsapp"] = wa
+    registry = build_default_registry(orch)
+
+    assert registry.dispatch("whatsapp_open") == "Opening WhatsApp."
+    assert registry.dispatch("whatsapp_find", {"name": "Siba"}) == "Found via find Siba's chat"
+    assert registry.dispatch("whatsapp_send", {"message": "hi"}) == "Sent via send a message hi"
+    assert registry.dispatch("whatsapp_close") == "Closed WhatsApp."
 
 
 def test_request_shutdown_tool_sets_flag():

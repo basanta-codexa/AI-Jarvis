@@ -111,6 +111,34 @@ def build_default_registry(orchestrator) -> ToolRegistry:
             return "Web search is unavailable."
         return skill._handle_search(f"search for {query.strip()}").response
 
+    def whatsapp_open() -> str:
+        skill = orchestrator.plugins.skills.get("whatsapp")
+        if skill is None:
+            return "WhatsApp control is unavailable."
+        return skill._handle_open("open whatsapp").response
+
+    def whatsapp_find(name: str) -> str:
+        if not name or not name.strip():
+            return "Who should I find?"
+        skill = orchestrator.plugins.skills.get("whatsapp")
+        if skill is None:
+            return "WhatsApp control is unavailable."
+        return skill._handle_find(f"find {name.strip()}'s chat").response
+
+    def whatsapp_send(message: str) -> str:
+        if not message or not message.strip():
+            return "What should I send?"
+        skill = orchestrator.plugins.skills.get("whatsapp")
+        if skill is None:
+            return "WhatsApp control is unavailable."
+        return skill._handle_send(f"send a message {message.strip()}").response
+
+    def whatsapp_close() -> str:
+        skill = orchestrator.plugins.skills.get("whatsapp")
+        if skill is None:
+            return "WhatsApp control is unavailable."
+        return skill._handle_close("close whatsapp").response
+
     def request_shutdown() -> str:
         orchestrator.request_shutdown = True
         return "Shutdown requested."
@@ -147,6 +175,23 @@ def build_default_registry(orchestrator) -> ToolRegistry:
         "search_web", "Open a web search for a query in the user's browser.",
         _string_arg("query", "What to search for."),
         search_web,
+    ))
+    registry.register(ToolSpec(
+        "whatsapp_open", "Open WhatsApp Desktop on the user's machine.",
+        {"type": "object", "properties": {}}, whatsapp_open,
+    ))
+    registry.register(ToolSpec(
+        "whatsapp_find", "Find a person's chat in WhatsApp so a message can be sent.",
+        _string_arg("name", "The contact name, e.g. 'Siba Prasada Padhi'."),
+        whatsapp_find,
+    ))
+    registry.register(ToolSpec(
+        "whatsapp_send", "Send a message in the currently open WhatsApp chat.",
+        _string_arg("message", "The message text to send."), whatsapp_send,
+    ))
+    registry.register(ToolSpec(
+        "whatsapp_close", "Close WhatsApp Desktop.",
+        {"type": "object", "properties": {}}, whatsapp_close,
     ))
     registry.register(ToolSpec(
         "request_shutdown", "Shut down the assistant when the user asks to exit.",
