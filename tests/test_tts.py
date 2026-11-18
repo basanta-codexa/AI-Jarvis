@@ -1,12 +1,31 @@
 from unittest.mock import Mock
 
-from ai_jarvis.voice.tts import TTS, _speech_timeout
+from ai_jarvis.voice.tts import TTS, _clean_for_speech, _speech_timeout
 
 
 def make_tts(monkeypatch, speak_now):
     monkeypatch.setattr(TTS, "_check_powershell", staticmethod(lambda: False))
     monkeypatch.setattr(TTS, "_speak_now", speak_now)
     return TTS()
+
+
+def test_clean_for_speech_removes_dashes_and_markdown():
+    raw = "Here's what I can do:\n• Save a note\n• Search memory\n\n-------\n**Bold word** and `code`."
+    result = _clean_for_speech(raw)
+    assert "-------" not in result
+    assert "•" not in result
+    assert "**" not in result
+    assert "`" not in result
+    assert "Bold word and code." in result
+    result2 = _clean_for_speech("Hello\n\nWorld.")
+    assert result2 == "Hello World."
+
+
+def test_speak_queues_cleaned_text(monkeypatch):
+    tts = make_tts(monkeypatch, lambda self, text: None)
+    tts.speak("A\n• B\n---")
+    assert tts._queue.get_nowait() == "A B"
+    tts.shutdown()
 
 
 def test_speech_timeout_is_generous_enough_not_to_cut_off_speech():

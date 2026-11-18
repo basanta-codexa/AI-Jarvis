@@ -6,12 +6,28 @@ from __future__ import annotations
 
 import base64
 import queue
+import re
 import subprocess
 import threading
 import os
 from typing import Optional
 
 from ai_jarvis.config.settings import TTS_RATE, TTS_VOLUME, TTS_VOICE_INDEX
+
+
+def _clean_for_speech(text: str) -> str:
+    """Strip markdown/separators so the voice never reads "dash dash dash".
+
+    Bullets, horizontal rules, emphasis and code markers are visual-only —
+    they should not be spoken. Sentences and punctuation are preserved.
+    """
+    text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)   # code blocks
+    text = re.sub(r"^\s*(?:---+|\*\*\*+|___+|===+)\s*$", " ", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[-*•]\s+", "", text, flags=re.MULTILINE)  # bullets
+    text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.MULTILINE)  # headers
+    text = re.sub(r"[`*_~]", "", text)                          # emphasis markers
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def _speech_timeout(text: str) -> float:
@@ -58,9 +74,10 @@ class TTS:
 
     def speak(self, text: str) -> None:
         """Queue text to be spoken. Non-blocking — returns immediately."""
-        if not text or not text.strip():
+        cleaned = _clean_for_speech(text)
+        if not cleaned:
             return
-        self._queue.put(text.strip())
+        self._queue.put(cleaned)
 
     def _run(self):
         """Worker thread: pulls from queue and speaks each item."""
