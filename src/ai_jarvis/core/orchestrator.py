@@ -29,6 +29,15 @@ class JarvisOrchestrator:
         r"details about|facts about|learn about)\s+(.+?)\??\s*$",
         re.IGNORECASE,
     )
+    # Factual yes/no and "when/why/how" questions: "did dhoni retire from ipl".
+    _FACT_RE = re.compile(
+        r"^\s*(?:did|does|do|is|are|was|were|has|have|can|could|will|would|"
+        r"when|where|why|how)\b\s+(.+?)\??\s*$",
+        re.IGNORECASE,
+    )
+    _NON_FACT_SUBJECTS = frozenset({
+        "you", "i", "it", "this", "that", "there", "they", "we", "he", "she",
+    })
 
     def __init__(self, on_message=None, data_dir: str | Path = None):
         if data_dir is None:
@@ -110,9 +119,17 @@ class JarvisOrchestrator:
     async def _lookup_for_prompt(self, text: str) -> str | None:
         """Fetch a short reference for lookup-style questions, if any."""
         match = self._LOOKUP_RE.match(text)
-        if not match:
-            return None
-        subject = match.group(1).strip().strip("?.").strip()
+        if match:
+            subject = match.group(1).strip().strip("?.").strip()
+        else:
+            match = self._FACT_RE.match(text)
+            if not match:
+                return None
+            subject = match.group(1).strip().strip("?.").strip()
+            words = {w for w in re.findall(r"[a-z]+", subject.lower())}
+            # "how are you" / "how can I …" are conversation, not lookups.
+            if not words or words <= self._NON_FACT_SUBJECTS or {"i", "you"} & words:
+                return None
         if not subject:
             return None
         summary = await asyncio.to_thread(wikipedia_summary, subject)

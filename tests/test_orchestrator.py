@@ -256,6 +256,39 @@ def test_lookup_trigger_covers_common_natural_phrasings(monkeypatch):
     assert looked_up == list(phrasings.values())
 
 
+def test_factual_question_is_grounded_via_search(monkeypatch):
+    create = _patch_async_client(monkeypatch)
+    searched = []
+    monkeypatch.setattr(
+        orchestrator_module,
+        "wikipedia_search",
+        lambda query, limit=3: searched.append(query)
+        or "MS Dhoni: Former India captain retires from IPL's Chennai Super Kings.",
+    )
+    orchestrator = make_orchestrator()
+
+    asyncio.run(orchestrator._ai_fallback("did dhoni retire from ipl"))
+
+    assert searched == ["dhoni retire from ipl"]
+    system_prompt = create.call_args.kwargs["messages"][0]["content"]
+    assert "Related Wikipedia articles about dhoni retire from ipl" in system_prompt
+    assert "retires from IPL" in system_prompt
+
+
+def test_conversational_question_does_not_trigger_lookup(monkeypatch):
+    looked_up = []
+    monkeypatch.setattr(
+        orchestrator_module,
+        "wikipedia_search",
+        lambda query, limit=3: looked_up.append(query) or None,
+    )
+    orchestrator = make_orchestrator()
+
+    asyncio.run(orchestrator._ai_fallback("how are you"))
+
+    assert looked_up == []
+
+
 def test_ai_fallback_uses_wikipedia_search_when_no_exact_article(monkeypatch):
     create = _patch_async_client(monkeypatch)
     searched = []
