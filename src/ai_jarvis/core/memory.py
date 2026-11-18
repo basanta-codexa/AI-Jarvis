@@ -83,9 +83,12 @@ class MemorySystem:
         except Exception:
             # Never silently drop history — move the corrupt file aside with a
             # unique name so a later corruption cannot overwrite an older copy.
+            # Windows clock resolution is ~15ms, so a timestamp alone can
+            # collide for two rapid failures — add a UUID to stay unique.
             stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+            unique = f"{stamp}-{uuid.uuid4().hex[:8]}"
             backup = self.history_file.with_name(
-                f"{self.history_file.stem}.corrupt.{stamp}.bak"
+                f"{self.history_file.stem}.corrupt.{unique}.bak"
             )
             try:
                 os.replace(self.history_file, backup)
@@ -124,8 +127,9 @@ class MemorySystem:
                     archived = data
             except Exception:
                 stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                unique = f"{stamp}-{uuid.uuid4().hex[:8]}"
                 corrupt = self.archive_file.with_name(
-                    f"{self.archive_file.stem}.corrupt.{stamp}.bak"
+                    f"{self.archive_file.stem}.corrupt.{unique}.bak"
                 )
                 os.replace(self.archive_file, corrupt)
         archived.extend(entries)
