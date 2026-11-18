@@ -57,44 +57,42 @@ def test_save_history_leaves_no_tmp_file(monkeypatch, tmp_path):
         memory.get_all_history()
 
 
-def test_forget_all_recreates_vector_collection(monkeypatch, tmp_path):
-    calls = []
-
+def test_forget_all_erases_vector_directory_and_recreates_empty_store(monkeypatch, tmp_path):
     class FakeClient:
-        def delete_collection(self, name):
-            calls.append(("delete", name))
-
         def get_or_create_collection(self, name):
-            calls.append(("create", name))
             return "COLLECTION"
 
     memory = make_memory(monkeypatch, tmp_path, vector=True, client_cls=FakeClient)
     memory.add_message("user", "remember the milk")
+    marker = memory.chroma_dir / "leftover.dat"
+    marker.write_text("old vector data", encoding="utf-8")
+    assert marker.exists()
 
     error = memory.forget_all()
 
     assert error is None
-    assert ("delete", "jarvis_memory") in calls
-    assert ("create", "jarvis_memory") in calls
+    assert not marker.exists()                       # on-disk store really removed
+    assert memory.chroma_dir.exists()                # empty store recreated
     assert memory._collection == "COLLECTION"
     assert memory.get_all_history() == []
 
 
 def test_forget_all_reports_vector_failure(monkeypatch, tmp_path):
-    class BadClient:
-        def delete_collection(self, name):
-            raise RuntimeError("collection is locked")
-
+    class FakeClient:
         def get_or_create_collection(self, name):
             return "COLLECTION"
 
-    memory = make_memory(monkeypatch, tmp_path, vector=True, client_cls=BadClient)
+    memory = make_memory(monkeypatch, tmp_path, vector=True, client_cls=FakeClient)
     memory.add_message("user", "secret fact")
 
+    def fail_rmtree(path):
+        raise OSError("directory is locked")
+
+    monkeypatch.setattr(memory_module.shutil, "rmtree", fail_rmtree)
     error = memory.forget_all()
 
     assert error is not None
-    assert "collection is locked" in error
+    assert "could not be erased" in error
     assert memory.get_all_history() == []          # history still cleared
 
 

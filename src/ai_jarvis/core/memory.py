@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -182,24 +183,34 @@ class MemorySystem:
         return [note for _, _, note in scored[:n]] or ["No relevant memories found."]
 
     def forget_all(self) -> str | None:
-        """Erase everything.
+        """Erase everything, including the on-disk vector database.
 
-        Returns None on full success, or an error string if the vector
-        store could not be wiped (history is cleared either way).
+        Returns None on full success, or an error string if the vector store
+        could not be wiped. Conversation history is cleared either way.
         """
-        vector_error = None
-        if self._client is not None:
-            try:
-                # ChromaDB rejects delete(where={}) — delete and recreate instead
-                self._client.delete_collection(COLLECTION_NAME)
-                self._collection = self._client.get_or_create_collection(COLLECTION_NAME)
-            except Exception as e:
-                vector_error = f"vector store could not be reset ({e})"
         self._fallback_notes = []
         self._history = []
         self.save_history()
         if self.archive_file.exists():
             self.archive_file.unlink()
+
+        vector_error = None
+        if self._client is not None or self.chroma_dir.exists():
+            close = getattr(self._client, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+            self._client = None
+            self._collection = None
+            try:
+                shutil.rmtree(self.chroma_dir)
+            except OSError as e:
+                vector_error = f"vector store could not be erased ({e})"
+
+        if VECTOR_MEMORY_ENABLED and _VECTOR_AVAILABLE:
+            self._init_vector()   # recreate an empty store for continued use
         return vector_error
 
     def get_stats(self) -> dict:
