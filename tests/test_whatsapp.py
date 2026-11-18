@@ -84,8 +84,27 @@ def test_send_without_finding_a_chat_is_rejected():
     manager, ctrl = make_manager()
     _, result = run(manager, "send a message hello there")
     assert result.success is False
-    assert "Find someone first" in result.response
+    assert "Mention a name first" in result.response
     assert ctrl.calls == []
+
+
+def test_send_with_recipient_finds_chat_then_sends():
+    manager, ctrl = make_manager()
+    skill_name, result = run(manager, "send a good morning message to maheswar")
+    assert skill_name == "whatsapp"
+    assert result.success is True
+    assert "Message sent to maheswar" in result.response
+    assert ctrl.calls == [("find", "maheswar"), ("send", "good morning")]
+
+
+def test_send_various_natural_phrasings():
+    manager, ctrl = make_manager()
+    run(manager, "message maheswar good morning")
+    assert ctrl.calls == [("find", "maheswar"), ("send", "good morning")]
+
+    manager, ctrl = make_manager()
+    run(manager, "send hello there")
+    assert ctrl.calls == []  # no recipient and no prior chat — safely rejected
 
 
 def test_existing_skills_still_route_normally():

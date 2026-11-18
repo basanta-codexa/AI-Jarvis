@@ -26,6 +26,7 @@ class SkillCommand:
     handler: Callable
     description: str
     examples: list[str] = field(default_factory=list)
+    priority: int = 0   # higher wins across skills; beats regex length
 
 
 class BaseSkill(ABC):
@@ -46,6 +47,7 @@ class BaseSkill(ABC):
         handler: Callable,
         description: str,
         examples: list[str] | None = None,
+        priority: int = 0,
     ):
         self.commands.append(
             SkillCommand(
@@ -53,6 +55,7 @@ class BaseSkill(ABC):
                 handler=handler,
                 description=description,
                 examples=examples or [],
+                priority=priority,
             )
         )
 

@@ -64,9 +64,14 @@ class PluginManager:
 
         # Sort by specificity: non-fallback patterns first, then longer patterns
         def specificity(item):
-            cmd, _ = item
+            cmd, skill = item
             is_fallback = cmd.pattern.strip() == r".+"
-            return (is_fallback, -len(cmd.pattern))
+            return (
+                is_fallback,
+                -getattr(cmd, "priority", 0),
+                -len(cmd.pattern),
+                skill.name,
+            )
 
         matches.sort(key=specificity)
         return matches[0]

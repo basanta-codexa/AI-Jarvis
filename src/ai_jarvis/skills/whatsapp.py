@@ -63,19 +63,26 @@ class WhatsAppSkill(BaseSkill):
     def setup(self):
         self.register_command(
             r"\bopen\s+whatsapp\b", self._handle_open,
-            "Open WhatsApp Desktop", ["open whatsapp"],
+            "Open WhatsApp Desktop", ["open whatsapp"], priority=20,
         )
         self.register_command(
             r"\b(?:find|search)\s+(.+?)(?:'s)?\s+chat\b", self._handle_find,
-            "Find someone's chat", ["find siba prasada padhi's chat"],
+            "Find someone's chat", ["find siba prasada padhi's chat"], priority=20,
         )
         self.register_command(
-            r"\bsend\s+(?:a\s+)?(?:message|msg)\b(.+)", self._handle_send,
-            "Send a message in the current chat", ["send a message hello"],
+            r"\bsend\b(.+)", self._handle_send,
+            "Send a WhatsApp message (finds the contact if named)",
+            ["send a good morning message to maheswar", "send hello"],
+            priority=20,
+        )
+        self.register_command(
+            r"\bmessage\s+(\S+)\s+(.+)", self._handle_send,
+            "Message someone on WhatsApp", ["message maheswar good morning"],
+            priority=20,
         )
         self.register_command(
             r"\bclose\s+(?:the\s+)?whatsapp\b", self._handle_close,
-            "Close WhatsApp", ["close whatsapp"],
+            "Close WhatsApp", ["close whatsapp"], priority=20,
         )
 
     def _handle_open(self, text: str) -> SkillResult:
@@ -102,22 +109,56 @@ class WhatsAppSkill(BaseSkill):
                 "or should I warn them first?" ),
         )
 
-    def _handle_send(self, text: str) -> SkillResult:
-        message = re.sub(
-            r"\bsend\s+(?:a\s+)?(?:message|msg)\b", "", text, flags=re.IGNORECASE
-        ).strip().strip(",").strip()
+    @staticmethod
+    def _parse_send(text: str) -> tuple[str | None, str]:
+        """Extract (recipient, message) from natural phrasing.
+
+        Handles "send hello", "send a message hello",
+        "send a good morning message to maheswar", and
+        "message maheswar good morning".
+        """
+        is_message_form = bool(re.match(r"^\s*message\b", text, re.IGNORECASE))
+        body = re.sub(r"^\s*(?:send|message)\b", "", text, flags=re.IGNORECASE).strip()
+        recipient = None
+        if is_message_form and " to " not in body.lower():
+            # "message maheswar good morning" — first word is the contact.
+            parts = body.split(None, 1)
+            if len(parts) == 2:
+                recipient, body = parts[0], parts[1]
+        # "… to <name>" — recipient is everything after the last " to ".
+        parts = re.split(r"\s+to\s+", body, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            body, recipient = parts[0], parts[-1].strip().strip(".")
+        # Remove filler words that describe the message rather than its content.
+        body = re.sub(
+            r"\b(?:a|an|the|message|msg|saying|that\s+says)\b",
+            " ", body, flags=re.IGNORECASE,
+        )
+        message = re.sub(r"\s+", " ", body).strip().strip(",").strip()
         message = message.replace(" ,", ",")
+        return recipient or None, message
+
+    def _handle_send(self, text: str) -> SkillResult:
+        recipient, message = self._parse_send(text)
         if not message:
             return SkillResult(success=False, response="What should I send?")
-        if not self._last_contact:
-            return SkillResult(success=False, response="Which chat? Find someone first.")
         try:
+            # If a name was given, find that chat first — no need for a
+            # separate "find …'s chat" command.
+            if recipient:
+                self.controller.find_chat(recipient)
+                self._last_contact = recipient
+            if not self._last_contact:
+                return SkillResult(success=False, response="Which chat? Mention a name first.")
             self.controller.send_message(message)
         except Exception as e:
             return SkillResult(success=False, response=f"Couldn't send the message: {e}")
         return SkillResult(
             success=True,
-            response=f"Message sent to {self._last_contact}. Their inbox is now yours. No take-backs.",
+            response=(
+                f"Message sent to {self._last_contact}: '{message}'. "
+                "Your words are out there now. No take-backs."
+            ),
         )
 
     def _handle_close(self, text: str) -> SkillResult:
